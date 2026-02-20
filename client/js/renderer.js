@@ -249,4 +249,14 @@ function drawHUD(player, score) {
     ctx.textAlign = 'right';
     ctx.fillText('Score: ' + score, CANVAS_WIDTH - 10, 26);
     ctx.textAlign = 'left';
+
+    // Weapon powerup indicator
+    if (player.weapon !== 'normal' && player.weaponTimer > 0) {
+        const weaponLabel = player.weapon === 'shotgun' ? 'SHOTGUN' : 'RAPID';
+        const weaponColor = player.weapon === 'shotgun' ? '#FF8844' : '#44DDFF';
+        ctx.fillStyle = weaponColor;
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(weaponLabel + ' ' + Math.ceil(player.weaponTimer) + 's', 10, 46);
+    }
 }

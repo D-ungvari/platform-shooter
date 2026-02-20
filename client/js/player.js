@@ -23,6 +23,8 @@ export function createPlayer() {
         facingRight: true,
         invincible: 0,
         shootCooldown: 0,
+        weapon: 'normal',
+        weaponTimer: 0,
     };
 }
 
@@ -62,11 +64,20 @@ export function updatePlayer(player, dt, bullets) {
     const cx = player.x + player.width / 2;
     player.facingRight = mouse.x >= cx;
 
+    // Weapon timer
+    if (player.weaponTimer > 0) {
+        player.weaponTimer -= dt;
+        if (player.weaponTimer <= 0) {
+            player.weapon = 'normal';
+        }
+    }
+
     // Shooting — auto-fire while holding mouse button
+    const cooldown = player.weapon === 'rapid' ? SHOOT_COOLDOWN * 0.4 : SHOOT_COOLDOWN;
     player.shootCooldown -= dt;
     if ((mouse.clicked || mouse.down) && player.shootCooldown <= 0) {
         fireBullet(player, mouse, bullets);
-        player.shootCooldown = SHOOT_COOLDOWN;
+        player.shootCooldown = cooldown;
         playShoot();
         triggerMuzzleFlash();
     }
@@ -85,14 +96,39 @@ function fireBullet(player, mouse, bullets) {
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len === 0) return;
 
-    bullets.push({
-        x: cx,
-        y: cy,
-        vx: (dx / len) * BULLET_SPEED,
-        vy: (dy / len) * BULLET_SPEED,
-        radius: BULLET_RADIUS,
-        damage: BULLET_DAMAGE,
-    });
+    const nx = dx / len;
+    const ny = dy / len;
+
+    if (player.weapon === 'shotgun') {
+        // 5 bullets in a spread
+        for (let i = -2; i <= 2; i++) {
+            const spread = i * 0.12; // radians
+            const cos = Math.cos(spread);
+            const sin = Math.sin(spread);
+            const bx = nx * cos - ny * sin;
+            const by = nx * sin + ny * cos;
+            bullets.push({
+                x: cx, y: cy,
+                vx: bx * BULLET_SPEED * 0.9,
+                vy: by * BULLET_SPEED * 0.9,
+                radius: BULLET_RADIUS * 0.8,
+                damage: BULLET_DAMAGE,
+            });
+        }
+    } else {
+        bullets.push({
+            x: cx, y: cy,
+            vx: nx * BULLET_SPEED,
+            vy: ny * BULLET_SPEED,
+            radius: BULLET_RADIUS,
+            damage: BULLET_DAMAGE,
+        });
+    }
+}
+
+export function giveWeapon(player, type, duration) {
+    player.weapon = type;
+    player.weaponTimer = duration;
 }
 
 export function damagePlayer(player, amount) {

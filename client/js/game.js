@@ -1,7 +1,7 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, PLAYER_MAX_HEALTH } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
-import { createPlayer, updatePlayer, damagePlayer } from './player.js';
+import { createPlayer, updatePlayer, damagePlayer, giveWeapon } from './player.js';
 import { moveBullets } from './bullet.js';
 import { updateEnemies } from './enemy.js';
 import { resetSpawner, updateSpawner } from './spawner.js';
@@ -10,7 +10,7 @@ import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
 import {
     updateEffects, renderEffects, resetEffects,
     spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset,
-    spawnHealthPickup, getPickups, removePickup, showAnnouncement
+    spawnHealthPickup, spawnPickup, getPickups, removePickup, showAnnouncement
 } from './effects.js';
 import { playEnemyDeath, playPlayerHit, playPickup } from './audio.js';
 
@@ -144,8 +144,14 @@ function update(dt) {
 
                     killCount++;
 
-                    if (Math.random() < 0.2) {
+                    // Drop pickups (25% total: 15% health, 5% shotgun, 5% rapid)
+                    const dropRoll = Math.random();
+                    if (dropRoll < 0.15) {
                         spawnHealthPickup(ex, ey);
+                    } else if (dropRoll < 0.20) {
+                        spawnPickup(ex, ey, 'shotgun');
+                    } else if (dropRoll < 0.25) {
+                        spawnPickup(ex, ey, 'rapid');
                     }
 
                     if (killCount >= nextWaveAt) {
@@ -174,13 +180,22 @@ function update(dt) {
         }
     }
 
-    // Health pickup collisions
+    // Pickup collisions
     const pickups = getPickups();
     for (let i = pickups.length - 1; i >= 0; i--) {
         if (collides(player, pickups[i])) {
-            player.health = Math.min(player.health + pickups[i].healAmount, PLAYER_MAX_HEALTH);
+            const pu = pickups[i];
             playPickup();
-            spawnScorePopup(pickups[i].x + 8, pickups[i].y - 10, 'HP');
+            if (pu.type === 'health') {
+                player.health = Math.min(player.health + pu.healAmount, PLAYER_MAX_HEALTH);
+                spawnScorePopup(pu.x + 8, pu.y - 10, 'HP');
+            } else if (pu.type === 'shotgun') {
+                giveWeapon(player, 'shotgun', 8);
+                showAnnouncement('SHOTGUN!');
+            } else if (pu.type === 'rapid') {
+                giveWeapon(player, 'rapid', 8);
+                showAnnouncement('RAPID FIRE!');
+            }
             removePickup(i);
         }
     }

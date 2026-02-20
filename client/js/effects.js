@@ -32,25 +32,24 @@ export function spawnScorePopup(x, y, text) {
     });
 }
 
-export function spawnHealthPickup(x, y) {
+export function spawnPickup(x, y, type) {
     pickups.push({
         x: x - 8,
         y,
         width: 16,
         height: 16,
-        healAmount: 20,
-        life: 5.0, // despawn after 5 seconds
-        vy: -100,  // pop up then fall
+        type, // 'health', 'shotgun', 'rapid'
+        healAmount: type === 'health' ? 20 : 0,
+        life: 6.0,
+        vy: -100,
     });
 }
 
-export function getPickups() {
-    return pickups;
-}
+// Convenience aliases
+export function spawnHealthPickup(x, y) { spawnPickup(x, y, 'health'); }
 
-export function removePickup(index) {
-    pickups.splice(index, 1);
-}
+export function getPickups() { return pickups; }
+export function removePickup(index) { pickups.splice(index, 1); }
 
 export function triggerShake(intensity, duration) {
     shakeIntensity = intensity;
@@ -70,7 +69,6 @@ export function showAnnouncement(text) {
 }
 
 export function updateEffects(dt) {
-    // Particles
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx * dt;
@@ -80,7 +78,6 @@ export function updateEffects(dt) {
         if (p.life <= 0) particles.splice(i, 1);
     }
 
-    // Popups
     for (let i = popups.length - 1; i >= 0; i--) {
         const p = popups[i];
         p.y -= 60 * dt;
@@ -88,54 +85,66 @@ export function updateEffects(dt) {
         if (p.life <= 0) popups.splice(i, 1);
     }
 
-    // Pickups
     for (let i = pickups.length - 1; i >= 0; i--) {
         const p = pickups[i];
-        p.vy += 600 * dt; // gravity
+        p.vy += 600 * dt;
         p.y += p.vy * dt;
-        // Stop at ground (simple floor check at y=540)
-        if (p.y > 540) {
-            p.y = 540;
-            p.vy = 0;
-        }
+        if (p.y > 540) { p.y = 540; p.vy = 0; }
         p.life -= dt;
         if (p.life <= 0) pickups.splice(i, 1);
     }
 
-    // Shake
-    if (shakeTimer > 0) {
-        shakeTimer -= dt;
-    }
+    if (shakeTimer > 0) shakeTimer -= dt;
 
-    // Announcement
     if (announcement) {
         announcement.life -= dt;
         if (announcement.life <= 0) announcement = null;
     }
 }
 
+const PICKUP_COLORS = {
+    health: '#44FF44',
+    shotgun: '#FF8844',
+    rapid: '#44DDFF',
+};
+
 export function renderEffects(ctx) {
     // Particles
     for (const p of particles) {
-        const alpha = p.life / p.maxLife;
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = p.life / p.maxLife;
         ctx.fillStyle = p.color;
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
     }
     ctx.globalAlpha = 1.0;
 
-    // Health pickups
+    // Pickups
     for (const p of pickups) {
         const pulse = 0.8 + Math.sin(p.life * 8) * 0.2;
         ctx.globalAlpha = Math.min(p.life, 1.0);
-        ctx.fillStyle = '#44FF44';
+        const color = PICKUP_COLORS[p.type] || '#ffffff';
+        ctx.fillStyle = color;
         const s = p.width * pulse;
         const offset = (p.width - s) / 2;
         ctx.fillRect(p.x + offset, p.y + offset, s, s);
-        // Cross symbol
+
+        // Icon
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(p.x + 6, p.y + 3, 4, 10);
-        ctx.fillRect(p.x + 3, p.y + 6, 10, 4);
+        if (p.type === 'health') {
+            ctx.fillRect(p.x + 6, p.y + 3, 4, 10);
+            ctx.fillRect(p.x + 3, p.y + 6, 10, 4);
+        } else if (p.type === 'shotgun') {
+            // "S" letter
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('S', p.x + 8, p.y + 13);
+            ctx.textAlign = 'left';
+        } else if (p.type === 'rapid') {
+            // "R" letter
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('R', p.x + 8, p.y + 13);
+            ctx.textAlign = 'left';
+        }
         ctx.globalAlpha = 1.0;
     }
 
@@ -143,8 +152,7 @@ export function renderEffects(ctx) {
     ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
     for (const p of popups) {
-        const alpha = p.life / p.maxLife;
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = p.life / p.maxLife;
         ctx.fillStyle = '#FFFF00';
         ctx.fillText(p.text, p.x, p.y);
     }
@@ -153,8 +161,7 @@ export function renderEffects(ctx) {
 
     // Announcement
     if (announcement) {
-        const alpha = Math.min(announcement.life, 1.0);
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = Math.min(announcement.life, 1.0);
         ctx.fillStyle = '#FFFF00';
         ctx.font = 'bold 32px monospace';
         ctx.textAlign = 'center';
