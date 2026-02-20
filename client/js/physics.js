@@ -8,7 +8,9 @@ export function collides(a, b) {
 }
 
 export function applyGravity(entity, dt) {
-    entity.vy += GRAVITY * dt;
+    if (!entity.grounded) {
+        entity.vy += GRAVITY * dt;
+    }
 }
 
 export function resolvePlatformCollisions(entity) {

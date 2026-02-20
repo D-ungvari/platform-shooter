@@ -4,7 +4,7 @@ const mouse = { x: 0, y: 0, down: false, clicked: false };
 export function initInput(canvas) {
     window.addEventListener('keydown', e => {
         keys[e.key.toLowerCase()] = true;
-        if (e.key === ' ') e.preventDefault();
+        if (e.key === ' ' || e.key === 'ArrowUp') e.preventDefault();
     });
     window.addEventListener('keyup', e => {
         keys[e.key.toLowerCase()] = false;

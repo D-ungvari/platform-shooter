@@ -11,7 +11,7 @@ export function initRenderer(context) {
     ctx = context;
 }
 
-export function renderGame(player, enemies, bullets) {
+export function renderGame(player, enemies, bullets, score) {
     // Clear
     ctx.fillStyle = COLOR_BACKGROUND;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -41,7 +41,7 @@ export function renderGame(player, enemies, bullets) {
     }
 
     // HUD
-    drawHUD(player);
+    drawHUD(player, score);
 }
 
 function drawPlayer(player) {
@@ -80,12 +80,18 @@ function drawPlayer(player) {
     ctx.restore();
 }
 
-function drawHUD(player) {
+function drawHUD(player, score) {
+    // Health bar label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('HP', 10, 8);
+
     // Health bar
     const barW = 200;
     const barH = 16;
     const barX = 10;
-    const barY = 10;
+    const barY = 12;
     const healthRatio = Math.max(0, player.health / player.maxHealth);
 
     ctx.fillStyle = '#333';
@@ -100,6 +106,6 @@ function drawHUD(player) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '20px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText('Score: ' + (window.__gameScore || 0), CANVAS_WIDTH - 10, 26);
+    ctx.fillText('Score: ' + score, CANVAS_WIDTH - 10, 26);
     ctx.textAlign = 'left';
 }

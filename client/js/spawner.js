@@ -1,6 +1,6 @@
 import {
     INITIAL_SPAWN_INTERVAL, MIN_SPAWN_INTERVAL, SPAWN_ACCELERATION,
-    CANVAS_WIDTH, ENEMY_WIDTH, ENEMY_HEIGHT
+    CANVAS_WIDTH, ENEMY_WIDTH, ENEMY_HEIGHT, PLATFORMS
 } from './constants.js';
 import { createEnemy } from './enemy.js';
 
@@ -30,6 +30,7 @@ function getCurrentInterval() {
 function getSpawnPosition() {
     const side = Math.random() < 0.5 ? -1 : 1;
     const x = side === -1 ? -ENEMY_WIDTH : CANVAS_WIDTH;
-    const y = 556 - ENEMY_HEIGHT; // ground level
+    const groundY = PLATFORMS[0].y;
+    const y = groundY - ENEMY_HEIGHT;
     return { x, y };
 }

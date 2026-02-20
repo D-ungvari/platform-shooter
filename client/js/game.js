@@ -1,19 +1,20 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants.js';
-import { initInput, resetFrameInput, getMouse } from './input.js';
+import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer } from './player.js';
 import { moveBullets } from './bullet.js';
 import { updateEnemies } from './enemy.js';
 import { resetSpawner, updateSpawner } from './spawner.js';
 import { collides } from './physics.js';
-import { initUI, showMenu, showGameOver } from './ui.js';
+import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
 
-const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', GAME_OVER: 'GAME_OVER' };
+const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAME_OVER: 'GAME_OVER' };
 
 let canvas, ctx;
 let state;
 let player, enemies, bullets, score;
 let lastTime;
+let escapeHeld = false;
 
 export function initGame() {
     canvas = document.getElementById('game-canvas');
@@ -26,6 +27,7 @@ export function initGame() {
     initUI({
         onStart: startPlaying,
         onRestart: startPlaying,
+        onResume: resumePlaying,
     });
 
     state = STATE.MENU;
@@ -39,9 +41,14 @@ function startPlaying() {
     enemies = [];
     bullets = [];
     score = 0;
-    window.__gameScore = 0;
     resetSpawner();
     state = STATE.PLAYING;
+}
+
+function resumePlaying() {
+    hidePause();
+    state = STATE.PLAYING;
+    lastTime = performance.now();
 }
 
 function loop(timestamp) {
@@ -49,8 +56,24 @@ function loop(timestamp) {
     lastTime = timestamp;
 
     if (state === STATE.PLAYING) {
-        update(dt);
-        render();
+        // Pause check
+        if (isKeyDown('escape') && !escapeHeld) {
+            escapeHeld = true;
+            state = STATE.PAUSED;
+            showPause();
+        }
+        if (!isKeyDown('escape')) escapeHeld = false;
+
+        if (state === STATE.PLAYING) {
+            update(dt);
+            render();
+        }
+    } else if (state === STATE.PAUSED) {
+        if (isKeyDown('escape') && !escapeHeld) {
+            escapeHeld = true;
+            resumePlaying();
+        }
+        if (!isKeyDown('escape')) escapeHeld = false;
     }
 
     resetFrameInput();
@@ -85,7 +108,6 @@ function update(dt) {
                 bullets.splice(i, 1);
                 if (enemies[j].health <= 0) {
                     score += enemies[j].scoreValue;
-                    window.__gameScore = score;
                     enemies.splice(j, 1);
                 }
                 break;
@@ -100,6 +122,13 @@ function update(dt) {
         }
     }
 
+    // Remove off-screen enemies (fell below canvas)
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        if (enemies[i].y > CANVAS_HEIGHT + 100) {
+            enemies.splice(i, 1);
+        }
+    }
+
     // Game over check
     if (player.health <= 0) {
         state = STATE.GAME_OVER;
@@ -108,5 +137,5 @@ function update(dt) {
 }
 
 function render() {
-    renderGame(player, enemies, bullets);
+    renderGame(player, enemies, bullets, score);
 }

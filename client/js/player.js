@@ -1,7 +1,8 @@
 import {
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, JUMP_FORCE,
     PLAYER_MAX_HEALTH, INVINCIBILITY_DURATION, SHOOT_COOLDOWN,
-    BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE
+    BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE,
+    CANVAS_WIDTH, CANVAS_HEIGHT
 } from './constants.js';
 import { isKeyDown, getMouse } from './input.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
@@ -24,17 +25,17 @@ export function createPlayer() {
 }
 
 export function updatePlayer(player, dt, bullets) {
-    // Horizontal movement
-    if (isKeyDown('a')) {
+    // Horizontal movement (WASD + arrow keys)
+    if (isKeyDown('a') || isKeyDown('arrowleft')) {
         player.vx = -PLAYER_SPEED;
-    } else if (isKeyDown('d')) {
+    } else if (isKeyDown('d') || isKeyDown('arrowright')) {
         player.vx = PLAYER_SPEED;
     } else {
         player.vx = 0;
     }
 
     // Jump
-    if ((isKeyDown('w') || isKeyDown(' ')) && player.grounded) {
+    if ((isKeyDown('w') || isKeyDown(' ') || isKeyDown('arrowup')) && player.grounded) {
         player.vy = -JUMP_FORCE;
         player.grounded = false;
     }
@@ -49,14 +50,18 @@ export function updatePlayer(player, dt, bullets) {
     // Platform collisions
     resolvePlatformCollisions(player);
 
+    // Clamp to canvas bounds
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > CANVAS_WIDTH) player.x = CANVAS_WIDTH - player.width;
+
     // Facing direction based on mouse
     const mouse = getMouse();
     const cx = player.x + player.width / 2;
     player.facingRight = mouse.x >= cx;
 
-    // Shooting cooldown
+    // Shooting — auto-fire while holding mouse button
     player.shootCooldown -= dt;
-    if (mouse.clicked && player.shootCooldown <= 0) {
+    if ((mouse.clicked || mouse.down) && player.shootCooldown <= 0) {
         fireBullet(player, mouse, bullets);
         player.shootCooldown = SHOOT_COOLDOWN;
     }

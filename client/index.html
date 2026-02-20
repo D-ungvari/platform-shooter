@@ -11,16 +11,30 @@
         <canvas id="game-canvas"></canvas>
 
         <div id="menu-screen" class="overlay">
-            <h1>Platform Shooter</h1>
-            <p class="prompt">Press Enter or Click to Start</p>
-            <h2>High Scores</h2>
-            <ol id="score-list"><li>No scores yet</li></ol>
+            <div class="menu-content">
+                <h1>Platform Shooter</h1>
+                <p class="prompt">Press Enter or Click to Start</p>
+                <div class="controls-info">
+                    <p>WASD / Arrows — Move &amp; Jump</p>
+                    <p>Mouse — Aim &amp; Shoot (hold to auto-fire)</p>
+                    <p>ESC — Pause</p>
+                </div>
+                <h2>High Scores</h2>
+                <ol id="score-list"><li>No scores yet</li></ol>
+            </div>
         </div>
 
-        <div id="gameover-screen" class="overlay" style="display:none">
+        <div id="pause-screen" class="overlay" style="display:none">
+            <h1>Paused</h1>
+            <p class="prompt">Press ESC to Resume</p>
+            <button id="resume-btn">Resume</button>
+        </div>
+
+        <div id="gameover-screen" class="overlay gameover" style="display:none">
             <h1>Game Over</h1>
             <p>Score: <span id="final-score">0</span></p>
             <p id="rank-display"></p>
+            <p id="submit-error" class="error-text"></p>
             <div class="score-form">
                 <input type="text" id="name-input" maxlength="20" placeholder="Enter your name">
                 <button id="submit-score">Submit Score</button>

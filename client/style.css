@@ -40,6 +40,10 @@ canvas {
     cursor: pointer;
 }
 
+.overlay.gameover {
+    cursor: default;
+}
+
 .overlay h1 {
     font-size: 48px;
     margin-bottom: 16px;
@@ -55,6 +59,17 @@ canvas {
     font-size: 18px;
     color: #aaa;
     margin-bottom: 16px;
+}
+
+.controls-info {
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.controls-info p {
+    font-size: 13px;
+    color: #888;
+    line-height: 1.6;
 }
 
 .overlay ol {
@@ -120,4 +135,14 @@ button:disabled {
     font-size: 18px;
     color: #FFFF00;
     min-height: 24px;
+}
+
+.error-text {
+    font-size: 14px;
+    color: #FF4444;
+    min-height: 18px;
+}
+
+#resume-btn {
+    margin-top: 16px;
 }
