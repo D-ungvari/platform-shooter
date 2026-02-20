@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, PLAYER_MAX_HEALTH } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer } from './player.js';
@@ -9,8 +9,10 @@ import { collides } from './physics.js';
 import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
 import {
     updateEffects, renderEffects, resetEffects,
-    spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset
+    spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset,
+    spawnHealthPickup, getPickups, removePickup, showAnnouncement
 } from './effects.js';
+import { playEnemyDeath, playPlayerHit, playPickup } from './audio.js';
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAME_OVER: 'GAME_OVER' };
 
@@ -19,6 +21,8 @@ let state;
 let player, enemies, bullets, score;
 let lastTime;
 let escapeHeld = false;
+let killCount = 0;
+let nextWaveAt = 10;
 
 export function initGame() {
     canvas = document.getElementById('game-canvas');
@@ -45,6 +49,8 @@ function startPlaying() {
     enemies = [];
     bullets = [];
     score = 0;
+    killCount = 0;
+    nextWaveAt = 10;
     resetSpawner();
     resetEffects();
     state = STATE.PLAYING;
@@ -117,7 +123,22 @@ function update(dt) {
                     const color = enemies[j].type === 'flyer' ? COLOR_FLYER : COLOR_ENEMY;
                     spawnKillParticles(ex, ey, color);
                     spawnScorePopup(ex, ey - 20, enemies[j].scoreValue);
+                    playEnemyDeath();
                     score += enemies[j].scoreValue;
+                    killCount++;
+
+                    // 20% chance to drop a health pickup
+                    if (Math.random() < 0.2) {
+                        spawnHealthPickup(ex, ey);
+                    }
+
+                    // Wave announcements
+                    if (killCount >= nextWaveAt) {
+                        const wave = Math.floor(killCount / 10);
+                        showAnnouncement(`Wave ${wave + 1}!`);
+                        nextWaveAt += 10;
+                    }
+
                     enemies.splice(j, 1);
                 }
                 break;
@@ -130,8 +151,20 @@ function update(dt) {
         if (collides(player, enemy)) {
             if (player.invincible <= 0) {
                 triggerShake(6, 0.2);
+                playPlayerHit();
             }
             damagePlayer(player, enemy.damage);
+        }
+    }
+
+    // Health pickup collisions
+    const pickups = getPickups();
+    for (let i = pickups.length - 1; i >= 0; i--) {
+        if (collides(player, pickups[i])) {
+            player.health = Math.min(player.health + pickups[i].healAmount, PLAYER_MAX_HEALTH);
+            playPickup();
+            spawnScorePopup(pickups[i].x + 8, pickups[i].y - 10, 'HP');
+            removePickup(i);
         }
     }
 

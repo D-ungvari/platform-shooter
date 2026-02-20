@@ -6,6 +6,7 @@ import {
 } from './constants.js';
 import { isKeyDown, getMouse } from './input.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
+import { playShoot, playJump } from './audio.js';
 
 export function createPlayer() {
     return {
@@ -38,6 +39,7 @@ export function updatePlayer(player, dt, bullets) {
     if ((isKeyDown('w') || isKeyDown(' ') || isKeyDown('arrowup')) && player.grounded) {
         player.vy = -JUMP_FORCE;
         player.grounded = false;
+        playJump();
     }
 
     // Gravity
@@ -64,6 +66,7 @@ export function updatePlayer(player, dt, bullets) {
     if ((mouse.clicked || mouse.down) && player.shootCooldown <= 0) {
         fireBullet(player, mouse, bullets);
         player.shootCooldown = SHOOT_COOLDOWN;
+        playShoot();
     }
 
     // Invincibility timer
