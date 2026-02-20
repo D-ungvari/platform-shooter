@@ -21,19 +21,36 @@ export function updateSpawner(dt, enemies) {
         const type = pickEnemyType();
         const pos = getSpawnPosition(type);
         enemies.push(createEnemy(pos.x, pos.y, type));
+
+        // Occasionally spawn pairs after 45s
+        if (elapsedTime > 45 && Math.random() < 0.2) {
+            const type2 = pickEnemyType();
+            const pos2 = getSpawnPosition(type2);
+            enemies.push(createEnemy(pos2.x, pos2.y, type2));
+        }
+
         spawnTimer = getCurrentInterval();
     }
 }
 
 function pickEnemyType() {
     const roll = Math.random();
-    if (elapsedTime > 60 && roll < 0.15) return 'tank';
-    if (elapsedTime > 30 && roll < 0.35) return 'flyer';
+    // Smooth ramp: tank chance grows from 0% at 45s to ~20% by 120s
+    const tankChance = Math.min(0.20, Math.max(0, (elapsedTime - 45) * 0.003));
+    // Flyer chance grows from 0% at 20s to ~30% by 90s
+    const flyerChance = Math.min(0.30, Math.max(0, (elapsedTime - 20) * 0.004));
+
+    if (roll < tankChance) return 'tank';
+    if (roll < tankChance + flyerChance) return 'flyer';
     return 'runner';
 }
 
 function getCurrentInterval() {
-    return Math.max(MIN_SPAWN_INTERVAL, INITIAL_SPAWN_INTERVAL - (elapsedTime * SPAWN_ACCELERATION));
+    // Smoother curve: fast early ramp, slower late-game squeeze
+    const base = INITIAL_SPAWN_INTERVAL - (elapsedTime * SPAWN_ACCELERATION);
+    // Additional tightening after 60s (but diminishing)
+    const lateBonus = elapsedTime > 60 ? (elapsedTime - 60) * 0.005 : 0;
+    return Math.max(MIN_SPAWN_INTERVAL, base - lateBonus);
 }
 
 function getSpawnPosition(type) {
@@ -50,7 +67,6 @@ function getSpawnPosition(type) {
 
     // 30% chance to spawn from a platform edge (runners only)
     if (type === 'runner' && Math.random() < 0.3) {
-        // Pick a non-ground platform
         const plat = PLATFORMS[1 + Math.floor(Math.random() * (PLATFORMS.length - 1))];
         const x = side === -1 ? plat.x - w : plat.x + plat.width;
         const y = plat.y - h;

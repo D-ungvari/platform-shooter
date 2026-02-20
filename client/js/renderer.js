@@ -29,7 +29,7 @@ export function triggerMuzzleFlash() {
     muzzleFlash = 0.05;
 }
 
-export function renderGame(player, enemies, bullets, score, dt) {
+export function renderGame(player, enemies, bullets, score, dt, killCount, survivalTime) {
     gameTime += dt || 1 / 60;
 
     // Clear
@@ -106,7 +106,7 @@ export function renderGame(player, enemies, bullets, score, dt) {
     }
 
     // HUD
-    drawHUD(player, score);
+    drawHUD(player, score, killCount, survivalTime, enemies.length);
 }
 
 const ENEMY_COLORS = {
@@ -222,7 +222,7 @@ function drawPlayer(player) {
     ctx.restore();
 }
 
-function drawHUD(player, score) {
+function drawHUD(player, score, killCount, survivalTime, enemyCount) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '12px monospace';
     ctx.textAlign = 'left';
@@ -248,6 +248,26 @@ function drawHUD(player, score) {
     ctx.font = '20px monospace';
     ctx.textAlign = 'right';
     ctx.fillText('Score: ' + score, CANVAS_WIDTH - 10, 26);
+
+    // Survival timer (top center)
+    if (survivalTime !== undefined) {
+        const m = Math.floor(survivalTime / 60);
+        const s = Math.floor(survivalTime % 60);
+        const timeStr = m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `0:${s.toString().padStart(2, '0')}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '16px monospace';
+        ctx.fillText(timeStr, CANVAS_WIDTH / 2, 20);
+    }
+
+    // Kill count (below score)
+    if (killCount !== undefined) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#FF6666';
+        ctx.font = '14px monospace';
+        ctx.fillText('Kills: ' + killCount, CANVAS_WIDTH - 10, 44);
+    }
+
     ctx.textAlign = 'left';
 
     // Weapon powerup indicator
@@ -258,5 +278,17 @@ function drawHUD(player, score) {
         ctx.font = 'bold 14px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(weaponLabel + ' ' + Math.ceil(player.weaponTimer) + 's', 10, 46);
+    }
+
+    // Enemy swarm warning
+    if (enemyCount >= 8) {
+        const pulse = 0.4 + Math.sin(gameTime * 6) * 0.3;
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = '#FF3333';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('!! ' + enemyCount + ' ENEMIES !!', CANVAS_WIDTH / 2, 40);
+        ctx.globalAlpha = 1.0;
+        ctx.textAlign = 'left';
     }
 }

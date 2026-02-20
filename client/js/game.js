@@ -31,6 +31,10 @@ let comboCount = 0;
 let comboTimer = 0;
 const COMBO_WINDOW = 1.5;
 
+// Difficulty announcements
+let lastDiffTier = 0;
+const DIFF_THRESHOLDS = [30, 60, 90, 120, 180];
+
 // Death animation
 let deathTimer = 0;
 
@@ -69,6 +73,7 @@ function startPlaying() {
     survivalTime = 0;
     deathTimer = 0;
     flashAlpha = 0;
+    lastDiffTier = 0;
     resetSpawner();
     resetEffects();
     state = STATE.PLAYING;
@@ -126,6 +131,16 @@ function formatTime(seconds) {
 }
 
 function update(dt) {
+    // Difficulty tier announcements
+    for (let i = lastDiffTier; i < DIFF_THRESHOLDS.length; i++) {
+        if (survivalTime >= DIFF_THRESHOLDS[i]) {
+            const labels = ['Danger rising...', 'Onslaught!', 'Nightmare!', 'HELL MODE', 'IMPOSSIBLE'];
+            showAnnouncement(labels[i]);
+            triggerShake(4, 0.3);
+            lastDiffTier = i + 1;
+        }
+    }
+
     updatePlayer(player, dt, bullets);
     moveBullets(bullets, dt);
     updateEnemies(enemies, player, dt);
@@ -241,7 +256,7 @@ function render(dt) {
     const shake = getShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    renderGame(player, enemies, bullets, score, dt);
+    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime);
     renderEffects(ctx);
 
     // Combo indicator
