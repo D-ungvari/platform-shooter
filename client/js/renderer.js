@@ -1,7 +1,7 @@
 import {
     CANVAS_WIDTH, CANVAS_HEIGHT, PLATFORMS,
     COLOR_BACKGROUND, COLOR_PLAYER, COLOR_ENEMY,
-    COLOR_BULLET, COLOR_PLATFORM, COLOR_GROUND
+    COLOR_BULLET, COLOR_PLATFORM, COLOR_GROUND, COLOR_FLYER
 } from './constants.js';
 import { getMouse } from './input.js';
 
@@ -24,8 +24,8 @@ export function renderGame(player, enemies, bullets, score) {
     }
 
     // Enemies
-    ctx.fillStyle = COLOR_ENEMY;
     for (const e of enemies) {
+        ctx.fillStyle = e.type === 'flyer' ? COLOR_FLYER : COLOR_ENEMY;
         ctx.fillRect(e.x, e.y, e.width, e.height);
     }
 

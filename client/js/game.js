@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer } from './player.js';
@@ -7,6 +7,10 @@ import { updateEnemies } from './enemy.js';
 import { resetSpawner, updateSpawner } from './spawner.js';
 import { collides } from './physics.js';
 import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
+import {
+    updateEffects, renderEffects, resetEffects,
+    spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset
+} from './effects.js';
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAME_OVER: 'GAME_OVER' };
 
@@ -42,6 +46,7 @@ function startPlaying() {
     bullets = [];
     score = 0;
     resetSpawner();
+    resetEffects();
     state = STATE.PLAYING;
 }
 
@@ -107,6 +112,11 @@ function update(dt) {
                 enemies[j].health -= b.damage;
                 bullets.splice(i, 1);
                 if (enemies[j].health <= 0) {
+                    const ex = enemies[j].x + enemies[j].width / 2;
+                    const ey = enemies[j].y + enemies[j].height / 2;
+                    const color = enemies[j].type === 'flyer' ? COLOR_FLYER : COLOR_ENEMY;
+                    spawnKillParticles(ex, ey, color);
+                    spawnScorePopup(ex, ey - 20, enemies[j].scoreValue);
                     score += enemies[j].scoreValue;
                     enemies.splice(j, 1);
                 }
@@ -118,6 +128,9 @@ function update(dt) {
     // Enemy-player collisions
     for (const enemy of enemies) {
         if (collides(player, enemy)) {
+            if (player.invincible <= 0) {
+                triggerShake(6, 0.2);
+            }
             damagePlayer(player, enemy.damage);
         }
     }
@@ -129,6 +142,9 @@ function update(dt) {
         }
     }
 
+    // Effects
+    updateEffects(dt);
+
     // Game over check
     if (player.health <= 0) {
         state = STATE.GAME_OVER;
@@ -137,5 +153,10 @@ function update(dt) {
 }
 
 function render() {
+    const shake = getShakeOffset();
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
     renderGame(player, enemies, bullets, score);
+    renderEffects(ctx);
+    ctx.restore();
 }

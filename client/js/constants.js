@@ -27,6 +27,15 @@ export const ENEMY_HEALTH = 1;
 export const ENEMY_CONTACT_DAMAGE = 20;
 export const ENEMY_SCORE_VALUE = 100;
 
+// Enemy (Flyer)
+export const FLYER_WIDTH = 24;
+export const FLYER_HEIGHT = 24;
+export const FLYER_SPEED = 90;
+export const FLYER_HEALTH = 1;
+export const FLYER_CONTACT_DAMAGE = 15;
+export const FLYER_SCORE_VALUE = 150;
+export const COLOR_FLYER = '#FF88FF';
+
 // Spawning
 export const INITIAL_SPAWN_INTERVAL = 2.0;
 export const MIN_SPAWN_INTERVAL = 0.4;
