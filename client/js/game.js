@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, PLAYER_MAX_HEALTH } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, PLAYER_MAX_HEALTH } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer } from './player.js';
@@ -15,6 +15,7 @@ import {
 import { playEnemyDeath, playPlayerHit, playPickup } from './audio.js';
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAME_OVER: 'GAME_OVER' };
+const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
 
 let canvas, ctx;
 let state;
@@ -23,6 +24,11 @@ let lastTime;
 let escapeHeld = false;
 let killCount = 0;
 let nextWaveAt = 10;
+
+// Combo system
+let comboCount = 0;
+let comboTimer = 0;
+const COMBO_WINDOW = 1.5; // seconds to maintain combo
 
 export function initGame() {
     canvas = document.getElementById('game-canvas');
@@ -51,6 +57,8 @@ function startPlaying() {
     score = 0;
     killCount = 0;
     nextWaveAt = 10;
+    comboCount = 0;
+    comboTimer = 0;
     resetSpawner();
     resetEffects();
     state = STATE.PLAYING;
@@ -67,7 +75,6 @@ function loop(timestamp) {
     lastTime = timestamp;
 
     if (state === STATE.PLAYING) {
-        // Pause check
         if (isKeyDown('escape') && !escapeHeld) {
             escapeHeld = true;
             state = STATE.PAUSED;
@@ -77,7 +84,7 @@ function loop(timestamp) {
 
         if (state === STATE.PLAYING) {
             update(dt);
-            render();
+            render(dt);
         }
     } else if (state === STATE.PAUSED) {
         if (isKeyDown('escape') && !escapeHeld) {
@@ -92,17 +99,16 @@ function loop(timestamp) {
 }
 
 function update(dt) {
-    // Player
     updatePlayer(player, dt, bullets);
-
-    // Bullets
     moveBullets(bullets, dt);
-
-    // Enemies
     updateEnemies(enemies, player, dt);
-
-    // Spawner
     updateSpawner(dt, enemies);
+
+    // Combo timer
+    if (comboTimer > 0) {
+        comboTimer -= dt;
+        if (comboTimer <= 0) comboCount = 0;
+    }
 
     // Bullet-enemy collisions
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -120,19 +126,28 @@ function update(dt) {
                 if (enemies[j].health <= 0) {
                     const ex = enemies[j].x + enemies[j].width / 2;
                     const ey = enemies[j].y + enemies[j].height / 2;
-                    const color = enemies[j].type === 'flyer' ? COLOR_FLYER : COLOR_ENEMY;
+                    const color = ENEMY_COLORS[enemies[j].type] || COLOR_ENEMY;
                     spawnKillParticles(ex, ey, color);
-                    spawnScorePopup(ex, ey - 20, enemies[j].scoreValue);
                     playEnemyDeath();
-                    score += enemies[j].scoreValue;
+
+                    // Combo scoring
+                    comboCount++;
+                    comboTimer = COMBO_WINDOW;
+                    const multiplier = Math.min(comboCount, 5); // max 5x
+                    const points = enemies[j].scoreValue * multiplier;
+                    score += points;
+
+                    const comboText = multiplier > 1
+                        ? `${points} (${multiplier}x)`
+                        : `${points}`;
+                    spawnScorePopup(ex, ey - 20, comboText);
+
                     killCount++;
 
-                    // 20% chance to drop a health pickup
                     if (Math.random() < 0.2) {
                         spawnHealthPickup(ex, ey);
                     }
 
-                    // Wave announcements
                     if (killCount >= nextWaveAt) {
                         const wave = Math.floor(killCount / 10);
                         showAnnouncement(`Wave ${wave + 1}!`);
@@ -152,6 +167,8 @@ function update(dt) {
             if (player.invincible <= 0) {
                 triggerShake(6, 0.2);
                 playPlayerHit();
+                comboCount = 0; // taking damage breaks combo
+                comboTimer = 0;
             }
             damagePlayer(player, enemy.damage);
         }
@@ -168,28 +185,38 @@ function update(dt) {
         }
     }
 
-    // Remove off-screen enemies (fell below canvas)
+    // Remove off-screen enemies
     for (let i = enemies.length - 1; i >= 0; i--) {
         if (enemies[i].y > CANVAS_HEIGHT + 100) {
             enemies.splice(i, 1);
         }
     }
 
-    // Effects
     updateEffects(dt);
 
-    // Game over check
     if (player.health <= 0) {
         state = STATE.GAME_OVER;
         showGameOver(score);
     }
 }
 
-function render() {
+function render(dt) {
     const shake = getShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    renderGame(player, enemies, bullets, score);
+    renderGame(player, enemies, bullets, score, dt);
     renderEffects(ctx);
+
+    // Combo indicator
+    if (comboCount > 1) {
+        ctx.fillStyle = '#FFAA00';
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = Math.min(comboTimer / 0.5, 1.0);
+        ctx.fillText(`${comboCount}x COMBO`, CANVAS_WIDTH / 2, 50);
+        ctx.globalAlpha = 1.0;
+        ctx.textAlign = 'left';
+    }
+
     ctx.restore();
 }

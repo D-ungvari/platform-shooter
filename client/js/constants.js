@@ -36,6 +36,15 @@ export const FLYER_CONTACT_DAMAGE = 15;
 export const FLYER_SCORE_VALUE = 150;
 export const COLOR_FLYER = '#FF88FF';
 
+// Enemy (Tank)
+export const TANK_WIDTH = 40;
+export const TANK_HEIGHT = 48;
+export const TANK_SPEED = 60;
+export const TANK_HEALTH = 3;
+export const TANK_CONTACT_DAMAGE = 30;
+export const TANK_SCORE_VALUE = 250;
+export const COLOR_TANK = '#FF8800';
+
 // Spawning
 export const INITIAL_SPAWN_INTERVAL = 2.0;
 export const MIN_SPAWN_INTERVAL = 0.4;

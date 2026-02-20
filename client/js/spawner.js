@@ -1,7 +1,7 @@
 import {
     INITIAL_SPAWN_INTERVAL, MIN_SPAWN_INTERVAL, SPAWN_ACCELERATION,
     CANVAS_WIDTH, CANVAS_HEIGHT, ENEMY_WIDTH, ENEMY_HEIGHT,
-    FLYER_WIDTH, FLYER_HEIGHT, PLATFORMS
+    FLYER_WIDTH, FLYER_HEIGHT, TANK_WIDTH, TANK_HEIGHT, PLATFORMS
 } from './constants.js';
 import { createEnemy } from './enemy.js';
 
@@ -18,13 +18,18 @@ export function updateSpawner(dt, enemies) {
     spawnTimer -= dt;
 
     if (spawnTimer <= 0) {
-        // After 30s, 30% chance to spawn a flyer
-        const spawnFlyer = elapsedTime > 30 && Math.random() < 0.3;
-        const type = spawnFlyer ? 'flyer' : 'runner';
+        const type = pickEnemyType();
         const pos = getSpawnPosition(type);
         enemies.push(createEnemy(pos.x, pos.y, type));
         spawnTimer = getCurrentInterval();
     }
+}
+
+function pickEnemyType() {
+    const roll = Math.random();
+    if (elapsedTime > 60 && roll < 0.15) return 'tank';
+    if (elapsedTime > 30 && roll < 0.35) return 'flyer';
+    return 'runner';
 }
 
 function getCurrentInterval() {
@@ -40,8 +45,10 @@ function getSpawnPosition(type) {
         return { x, y };
     }
 
-    const x = side === -1 ? -ENEMY_WIDTH : CANVAS_WIDTH;
+    const w = type === 'tank' ? TANK_WIDTH : ENEMY_WIDTH;
+    const h = type === 'tank' ? TANK_HEIGHT : ENEMY_HEIGHT;
+    const x = side === -1 ? -w : CANVAS_WIDTH;
     const groundY = PLATFORMS[0].y;
-    const y = groundY - ENEMY_HEIGHT;
+    const y = groundY - h;
     return { x, y };
 }
