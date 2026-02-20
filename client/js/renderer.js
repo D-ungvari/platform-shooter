@@ -32,8 +32,12 @@ export function triggerMuzzleFlash() {
 export function renderGame(player, enemies, bullets, score, dt, killCount, survivalTime) {
     gameTime += dt || 1 / 60;
 
-    // Clear
-    ctx.fillStyle = COLOR_BACKGROUND;
+    // Clear — background darkens/reddens with time
+    const timeRatio = survivalTime !== undefined ? Math.min(survivalTime / 180, 1) : 0;
+    const bgR = 26 + Math.floor(timeRatio * 20);
+    const bgG = 26 - Math.floor(timeRatio * 10);
+    const bgB = 46 - Math.floor(timeRatio * 16);
+    ctx.fillStyle = `rgb(${bgR}, ${Math.max(0, bgG)}, ${Math.max(0, bgB)})`;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     // Background stars
@@ -57,6 +61,23 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
     // Enemies
     for (const e of enemies) {
         drawEnemy(e);
+    }
+
+    // Off-screen enemy indicators
+    for (const e of enemies) {
+        const ecx = e.x + e.width / 2;
+        const ecy = e.y + e.height / 2;
+        if (ecx < 0 || ecx > CANVAS_WIDTH || ecy < 0 || ecy > CANVAS_HEIGHT) {
+            const ix = Math.max(12, Math.min(CANVAS_WIDTH - 12, ecx));
+            const iy = Math.max(12, Math.min(CANVAS_HEIGHT - 12, ecy));
+            const color = ENEMY_COLORS[e.type] || COLOR_ENEMY;
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.7;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
     }
 
     // Player

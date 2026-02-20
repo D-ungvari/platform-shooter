@@ -73,3 +73,10 @@ export function playPickup() {
     playTone(600, 0.06, 'sine', 0.1);
     setTimeout(() => playTone(800, 0.08, 'sine', 0.1), 60);
 }
+
+export function playPlayerDeath() {
+    playNoise(0.3, 0.2);
+    playTone(200, 0.3, 'sawtooth', 0.15);
+    setTimeout(() => playTone(100, 0.4, 'square', 0.12), 100);
+    setTimeout(() => playTone(60, 0.5, 'sawtooth', 0.1), 250);
+}

@@ -10,9 +10,10 @@ import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
 import {
     updateEffects, renderEffects, resetEffects,
     spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset,
-    spawnHealthPickup, spawnPickup, getPickups, removePickup, showAnnouncement
+    spawnHealthPickup, spawnPickup, getPickups, removePickup, showAnnouncement,
+    spawnLandingDust
 } from './effects.js';
-import { playEnemyDeath, playPlayerHit, playPickup } from './audio.js';
+import { playEnemyDeath, playPlayerHit, playPickup, playPlayerDeath } from './audio.js';
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', DYING: 'DYING', GAME_OVER: 'GAME_OVER' };
 const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
@@ -141,7 +142,11 @@ function update(dt) {
         }
     }
 
+    const wasAirborne = !player.grounded;
     updatePlayer(player, dt, bullets);
+    if (wasAirborne && player.grounded) {
+        spawnLandingDust(player.x + player.width / 2, player.y + player.height);
+    }
     moveBullets(bullets, dt);
     updateEnemies(enemies, player, dt);
     updateSpawner(dt, enemies);
@@ -239,14 +244,19 @@ function update(dt) {
 
     updateEffects(dt);
 
+    // Fall death
+    if (player.y > CANVAS_HEIGHT + 50) {
+        player.health = 0;
+    }
+
     // Death check — enter dying state with explosion
     if (player.health <= 0) {
         const px = player.x + player.width / 2;
-        const py = player.y + player.height / 2;
-        // Big death explosion
+        const py = Math.min(player.y + player.height / 2, CANVAS_HEIGHT - 20);
         for (let i = 0; i < 3; i++) spawnKillParticles(px, py, COLOR_PLAYER);
         triggerShake(12, 0.5);
         flashAlpha = 0.6;
+        playPlayerDeath();
         deathTimer = 1.2;
         state = STATE.DYING;
     }

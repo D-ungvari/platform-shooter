@@ -2,7 +2,7 @@ import {
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, JUMP_FORCE,
     PLAYER_MAX_HEALTH, INVINCIBILITY_DURATION, SHOOT_COOLDOWN,
     BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE,
-    CANVAS_WIDTH, CANVAS_HEIGHT
+    CANVAS_WIDTH, CANVAS_HEIGHT, PLATFORMS
 } from './constants.js';
 import { isKeyDown, getMouse } from './input.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
@@ -11,8 +11,8 @@ import { triggerMuzzleFlash } from './renderer.js';
 
 export function createPlayer() {
     return {
-        x: 100,
-        y: 500,
+        x: CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2,
+        y: PLATFORMS[0].y - PLAYER_HEIGHT,
         width: PLAYER_WIDTH,
         height: PLAYER_HEIGHT,
         vx: 0,

@@ -45,6 +45,21 @@ export function spawnPickup(x, y, type) {
     });
 }
 
+export function spawnLandingDust(x, y) {
+    for (let i = 0; i < 4; i++) {
+        const dir = i < 2 ? -1 : 1;
+        particles.push({
+            x, y,
+            vx: dir * (30 + Math.random() * 50),
+            vy: -(10 + Math.random() * 20),
+            life: 0.2 + Math.random() * 0.15,
+            maxLife: 0.3,
+            size: 2 + Math.random() * 2,
+            color: '#888888',
+        });
+    }
+}
+
 // Convenience aliases
 export function spawnHealthPickup(x, y) { spawnPickup(x, y, 'health'); }
 
