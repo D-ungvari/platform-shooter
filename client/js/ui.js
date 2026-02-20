@@ -70,9 +70,11 @@ export function showMenu() {
     loadScores(scoreListEl);
 }
 
-export function showGameOver(score) {
+export function showGameOver(score, kills, timeStr) {
     gameOverEl.style.display = 'flex';
     finalScoreEl.textContent = score;
+    document.getElementById('final-kills').textContent = kills || 0;
+    document.getElementById('final-time').textContent = timeStr || '0s';
     nameInput.value = '';
     rankEl.textContent = '';
     errorEl.textContent = '';

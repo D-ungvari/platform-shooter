@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, PLAYER_MAX_HEALTH } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER, PLAYER_MAX_HEALTH } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer, giveWeapon } from './player.js';
@@ -14,7 +14,7 @@ import {
 } from './effects.js';
 import { playEnemyDeath, playPlayerHit, playPickup } from './audio.js';
 
-const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAME_OVER: 'GAME_OVER' };
+const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', DYING: 'DYING', GAME_OVER: 'GAME_OVER' };
 const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
 
 let canvas, ctx;
@@ -24,11 +24,18 @@ let lastTime;
 let escapeHeld = false;
 let killCount = 0;
 let nextWaveAt = 10;
+let survivalTime = 0;
 
 // Combo system
 let comboCount = 0;
 let comboTimer = 0;
-const COMBO_WINDOW = 1.5; // seconds to maintain combo
+const COMBO_WINDOW = 1.5;
+
+// Death animation
+let deathTimer = 0;
+
+// Screen flash
+let flashAlpha = 0;
 
 export function initGame() {
     canvas = document.getElementById('game-canvas');
@@ -59,6 +66,9 @@ function startPlaying() {
     nextWaveAt = 10;
     comboCount = 0;
     comboTimer = 0;
+    survivalTime = 0;
+    deathTimer = 0;
+    flashAlpha = 0;
     resetSpawner();
     resetEffects();
     state = STATE.PLAYING;
@@ -83,6 +93,7 @@ function loop(timestamp) {
         if (!isKeyDown('escape')) escapeHeld = false;
 
         if (state === STATE.PLAYING) {
+            survivalTime += dt;
             update(dt);
             render(dt);
         }
@@ -92,10 +103,26 @@ function loop(timestamp) {
             resumePlaying();
         }
         if (!isKeyDown('escape')) escapeHeld = false;
+    } else if (state === STATE.DYING) {
+        deathTimer -= dt;
+        updateEffects(dt);
+        if (flashAlpha > 0) flashAlpha -= dt * 2;
+        render(dt);
+        if (deathTimer <= 0) {
+            state = STATE.GAME_OVER;
+            const timeStr = formatTime(survivalTime);
+            showGameOver(score, killCount, timeStr);
+        }
     }
 
     resetFrameInput();
     requestAnimationFrame(loop);
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
 function update(dt) {
@@ -104,20 +131,20 @@ function update(dt) {
     updateEnemies(enemies, player, dt);
     updateSpawner(dt, enemies);
 
-    // Combo timer
     if (comboTimer > 0) {
         comboTimer -= dt;
         if (comboTimer <= 0) comboCount = 0;
     }
 
+    // Flash decay
+    if (flashAlpha > 0) flashAlpha -= dt * 3;
+
     // Bullet-enemy collisions
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         const bBox = {
-            x: b.x - b.radius,
-            y: b.y - b.radius,
-            width: b.radius * 2,
-            height: b.radius * 2,
+            x: b.x - b.radius, y: b.y - b.radius,
+            width: b.radius * 2, height: b.radius * 2,
         };
         for (let j = enemies.length - 1; j >= 0; j--) {
             if (collides(bBox, enemies[j])) {
@@ -130,36 +157,25 @@ function update(dt) {
                     spawnKillParticles(ex, ey, color);
                     playEnemyDeath();
 
-                    // Combo scoring
                     comboCount++;
                     comboTimer = COMBO_WINDOW;
-                    const multiplier = Math.min(comboCount, 5); // max 5x
+                    const multiplier = Math.min(comboCount, 5);
                     const points = enemies[j].scoreValue * multiplier;
                     score += points;
 
-                    const comboText = multiplier > 1
-                        ? `${points} (${multiplier}x)`
-                        : `${points}`;
+                    const comboText = multiplier > 1 ? `${points} (${multiplier}x)` : `${points}`;
                     spawnScorePopup(ex, ey - 20, comboText);
-
                     killCount++;
 
-                    // Drop pickups (25% total: 15% health, 5% shotgun, 5% rapid)
                     const dropRoll = Math.random();
-                    if (dropRoll < 0.15) {
-                        spawnHealthPickup(ex, ey);
-                    } else if (dropRoll < 0.20) {
-                        spawnPickup(ex, ey, 'shotgun');
-                    } else if (dropRoll < 0.25) {
-                        spawnPickup(ex, ey, 'rapid');
-                    }
+                    if (dropRoll < 0.15) spawnHealthPickup(ex, ey);
+                    else if (dropRoll < 0.20) spawnPickup(ex, ey, 'shotgun');
+                    else if (dropRoll < 0.25) spawnPickup(ex, ey, 'rapid');
 
                     if (killCount >= nextWaveAt) {
-                        const wave = Math.floor(killCount / 10);
-                        showAnnouncement(`Wave ${wave + 1}!`);
+                        showAnnouncement(`Wave ${Math.floor(killCount / 10) + 1}!`);
                         nextWaveAt += 10;
                     }
-
                     enemies.splice(j, 1);
                 }
                 break;
@@ -173,7 +189,8 @@ function update(dt) {
             if (player.invincible <= 0) {
                 triggerShake(6, 0.2);
                 playPlayerHit();
-                comboCount = 0; // taking damage breaks combo
+                flashAlpha = 0.4; // red screen flash
+                comboCount = 0;
                 comboTimer = 0;
             }
             damagePlayer(player, enemy.damage);
@@ -202,16 +219,21 @@ function update(dt) {
 
     // Remove off-screen enemies
     for (let i = enemies.length - 1; i >= 0; i--) {
-        if (enemies[i].y > CANVAS_HEIGHT + 100) {
-            enemies.splice(i, 1);
-        }
+        if (enemies[i].y > CANVAS_HEIGHT + 100) enemies.splice(i, 1);
     }
 
     updateEffects(dt);
 
+    // Death check — enter dying state with explosion
     if (player.health <= 0) {
-        state = STATE.GAME_OVER;
-        showGameOver(score);
+        const px = player.x + player.width / 2;
+        const py = player.y + player.height / 2;
+        // Big death explosion
+        for (let i = 0; i < 3; i++) spawnKillParticles(px, py, COLOR_PLAYER);
+        triggerShake(12, 0.5);
+        flashAlpha = 0.6;
+        deathTimer = 1.2;
+        state = STATE.DYING;
     }
 }
 
@@ -234,4 +256,12 @@ function render(dt) {
     }
 
     ctx.restore();
+
+    // Screen flash (damage / death)
+    if (flashAlpha > 0) {
+        ctx.fillStyle = '#FF0000';
+        ctx.globalAlpha = Math.max(0, flashAlpha);
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.globalAlpha = 1.0;
+    }
 }

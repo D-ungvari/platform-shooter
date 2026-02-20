@@ -131,6 +131,18 @@ button:disabled {
     background: #666;
 }
 
+.final-score-big {
+    font-size: 28px;
+    font-weight: bold;
+    color: #FFFF00;
+}
+
+.final-stats {
+    font-size: 16px;
+    color: #aaa;
+    margin-bottom: 8px;
+}
+
 #rank-display {
     font-size: 18px;
     color: #FFFF00;
