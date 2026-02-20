@@ -8,9 +8,12 @@ export function moveBullets(bullets, dt) {
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        // Remove if off-screen
-        if (b.x < -BUFFER || b.x > CANVAS_WIDTH + BUFFER ||
-            b.y < -BUFFER || b.y > CANVAS_HEIGHT + BUFFER) {
+        // Horizontal screen wrapping
+        if (b.x < -BUFFER) b.x += CANVAS_WIDTH + BUFFER * 2;
+        else if (b.x > CANVAS_WIDTH + BUFFER) b.x -= CANVAS_WIDTH + BUFFER * 2;
+
+        // Remove if off-screen vertically
+        if (b.y < -BUFFER || b.y > CANVAS_HEIGHT + BUFFER) {
             bullets.splice(i, 1);
         }
     }

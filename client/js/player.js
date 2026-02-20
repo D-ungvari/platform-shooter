@@ -55,9 +55,9 @@ export function updatePlayer(player, dt, bullets) {
     // Platform collisions
     resolvePlatformCollisions(player);
 
-    // Clamp to canvas bounds
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.width > CANVAS_WIDTH) player.x = CANVAS_WIDTH - player.width;
+    // Screen wrapping — walk off one side, appear on the other
+    if (player.x + player.width < 0) player.x = CANVAS_WIDTH;
+    if (player.x > CANVAS_WIDTH) player.x = -player.width;
 
     // Facing direction based on mouse
     const mouse = getMouse();

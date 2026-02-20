@@ -9,7 +9,7 @@ export const GRAVITY = 1200;
 export const PLAYER_WIDTH = 32;
 export const PLAYER_HEIGHT = 48;
 export const PLAYER_SPEED = 300;
-export const JUMP_FORCE = 500;
+export const JUMP_FORCE = 600;
 export const PLAYER_MAX_HEALTH = 100;
 export const INVINCIBILITY_DURATION = 1.0;
 

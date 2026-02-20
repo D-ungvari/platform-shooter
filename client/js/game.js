@@ -237,7 +237,7 @@ function update(dt) {
         }
     }
 
-    // Remove off-screen enemies
+    // Remove enemies that fell off the bottom
     for (let i = enemies.length - 1; i >= 0; i--) {
         if (enemies[i].y > CANVAS_HEIGHT + 100) enemies.splice(i, 1);
     }
