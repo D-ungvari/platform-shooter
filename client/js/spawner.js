@@ -47,6 +47,16 @@ function getSpawnPosition(type) {
 
     const w = type === 'tank' ? TANK_WIDTH : ENEMY_WIDTH;
     const h = type === 'tank' ? TANK_HEIGHT : ENEMY_HEIGHT;
+
+    // 30% chance to spawn from a platform edge (runners only)
+    if (type === 'runner' && Math.random() < 0.3) {
+        // Pick a non-ground platform
+        const plat = PLATFORMS[1 + Math.floor(Math.random() * (PLATFORMS.length - 1))];
+        const x = side === -1 ? plat.x - w : plat.x + plat.width;
+        const y = plat.y - h;
+        return { x, y };
+    }
+
     const x = side === -1 ? -w : CANVAS_WIDTH;
     const groundY = PLATFORMS[0].y;
     const y = groundY - h;

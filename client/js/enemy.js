@@ -4,7 +4,8 @@ import {
     FLYER_WIDTH, FLYER_HEIGHT, FLYER_SPEED,
     FLYER_HEALTH, FLYER_CONTACT_DAMAGE, FLYER_SCORE_VALUE,
     TANK_WIDTH, TANK_HEIGHT, TANK_SPEED,
-    TANK_HEALTH, TANK_CONTACT_DAMAGE, TANK_SCORE_VALUE
+    TANK_HEALTH, TANK_CONTACT_DAMAGE, TANK_SCORE_VALUE,
+    JUMP_FORCE
 } from './constants.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
 
@@ -38,6 +39,7 @@ export function createEnemy(x, y, type = 'runner') {
         scoreValue: def.scoreValue,
         grounded: false,
         type,
+        jumpCooldown: 0,
     };
 }
 
@@ -47,10 +49,11 @@ export function updateEnemies(enemies, player, dt) {
 
     for (const enemy of enemies) {
         const enemyCx = enemy.x + enemy.width / 2;
+        const enemyCy = enemy.y + enemy.height / 2;
 
         if (enemy.type === 'flyer') {
             const dx = playerCx - enemyCx;
-            const dy = playerCy - (enemy.y + enemy.height / 2);
+            const dy = playerCy - enemyCy;
             const len = Math.sqrt(dx * dx + dy * dy);
             if (len > 0) {
                 enemy.vx = (dx / len) * enemy.speed;
@@ -65,6 +68,18 @@ export function updateEnemies(enemies, player, dt) {
             } else {
                 enemy.vx = enemy.speed;
             }
+
+            // Runners jump toward player if player is significantly above
+            if (enemy.jumpCooldown > 0) enemy.jumpCooldown -= dt;
+            if (enemy.type === 'runner' && enemy.grounded && enemy.jumpCooldown <= 0) {
+                const heightDiff = enemyCy - playerCy;
+                if (heightDiff > 80) {
+                    enemy.vy = -JUMP_FORCE * 0.85;
+                    enemy.grounded = false;
+                    enemy.jumpCooldown = 1.5 + Math.random();
+                }
+            }
+
             applyGravity(enemy, dt);
             enemy.x += enemy.vx * dt;
             enemy.y += enemy.vy * dt;

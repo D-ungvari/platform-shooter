@@ -60,8 +60,11 @@ export const COLOR_GROUND = '#444444';
 
 // Platforms
 export const PLATFORMS = [
-    { x: 0, y: 556, width: 1024, height: 20 },
-    { x: 150, y: 440, width: 200, height: 16 },
-    { x: 400, y: 320, width: 200, height: 16 },
-    { x: 650, y: 200, width: 200, height: 16 },
+    { x: 0, y: 556, width: 1024, height: 20 },     // Ground
+    { x: 50, y: 440, width: 180, height: 16 },      // Left low
+    { x: 420, y: 460, width: 180, height: 16 },     // Center low
+    { x: 790, y: 440, width: 180, height: 16 },     // Right low
+    { x: 220, y: 320, width: 180, height: 16 },     // Left mid
+    { x: 620, y: 320, width: 180, height: 16 },     // Right mid
+    { x: 400, y: 200, width: 220, height: 16 },     // Center high
 ];
