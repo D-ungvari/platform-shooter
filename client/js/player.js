@@ -7,6 +7,7 @@ import {
 import { isKeyDown, getMouse } from './input.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
 import { playShoot, playJump } from './audio.js';
+import { triggerMuzzleFlash } from './renderer.js';
 
 export function createPlayer() {
     return {
@@ -67,6 +68,7 @@ export function updatePlayer(player, dt, bullets) {
         fireBullet(player, mouse, bullets);
         player.shootCooldown = SHOOT_COOLDOWN;
         playShoot();
+        triggerMuzzleFlash();
     }
 
     // Invincibility timer
