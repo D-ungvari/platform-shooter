@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER, PLAYER_MAX_HEALTH } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER, PLAYER_MAX_HEALTH, GAME_MODE, PLATFORMS } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer, giveWeapon } from './player.js';
@@ -8,15 +8,19 @@ import { resetSpawner, updateSpawner } from './spawner.js';
 import { collides } from './physics.js';
 import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
 import {
-    updateEffects, renderEffects, resetEffects,
+    updateEffects, renderWorldEffects, renderScreenEffects, resetEffects,
     spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset,
     spawnHealthPickup, spawnPickup, getPickups, removePickup, showAnnouncement,
     spawnLandingDust
 } from './effects.js';
 import { playEnemyDeath, playPlayerHit, playPickup, playPlayerDeath } from './audio.js';
+import { createCamera, updateCamera, getCamera, resetCamera } from './camera.js';
+import { createTerrain, updateTerrain, getVisiblePlatforms, resetTerrain } from './terrain.js';
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', DYING: 'DYING', GAME_OVER: 'GAME_OVER' };
 const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
+
+let currentMode = GAME_MODE.ARENA;
 
 let canvas, ctx;
 let state;
@@ -42,6 +46,12 @@ let deathTimer = 0;
 // Screen flash
 let flashAlpha = 0;
 
+// Adventure mode tracking
+let maxPlayerX = 0;
+
+// Cached platforms for current frame (avoid redundant terrain queries)
+let cachedPlatforms = null;
+
 export function initGame() {
     canvas = document.getElementById('game-canvas');
     canvas.width = CANVAS_WIDTH;
@@ -51,8 +61,9 @@ export function initGame() {
     initInput(canvas);
     initRenderer(ctx);
     initUI({
-        onStart: startPlaying,
-        onRestart: startPlaying,
+        onStartArena: startArena,
+        onStartAdventure: startAdventure,
+        onRestart: () => currentMode === GAME_MODE.ADVENTURE ? startAdventure() : startArena(),
         onResume: resumePlaying,
     });
 
@@ -62,8 +73,18 @@ export function initGame() {
     requestAnimationFrame(loop);
 }
 
+function startArena() {
+    currentMode = GAME_MODE.ARENA;
+    startPlaying();
+}
+
+function startAdventure() {
+    currentMode = GAME_MODE.ADVENTURE;
+    startPlaying();
+}
+
 function startPlaying() {
-    player = createPlayer();
+    player = createPlayer(currentMode);
     enemies = [];
     bullets = [];
     score = 0;
@@ -75,8 +96,18 @@ function startPlaying() {
     deathTimer = 0;
     flashAlpha = 0;
     lastDiffTier = 0;
+    maxPlayerX = 0;
     resetSpawner();
     resetEffects();
+
+    if (currentMode === GAME_MODE.ADVENTURE) {
+        createTerrain();
+        createCamera(player.x);
+    } else {
+        resetTerrain();
+        resetCamera();
+    }
+
     state = STATE.PLAYING;
 }
 
@@ -111,7 +142,7 @@ function loop(timestamp) {
         if (!isKeyDown('escape')) escapeHeld = false;
     } else if (state === STATE.DYING) {
         deathTimer -= dt;
-        updateEffects(dt);
+        updateEffects(dt, getActivePlatforms());
         if (flashAlpha > 0) flashAlpha -= dt * 2;
         render(dt);
         if (deathTimer <= 0) {
@@ -131,7 +162,32 @@ function formatTime(seconds) {
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function refreshPlatforms() {
+    if (currentMode === GAME_MODE.ADVENTURE) {
+        const camera = getCamera();
+        updateTerrain(camera.x);
+        cachedPlatforms = getVisiblePlatforms(camera.x);
+    } else {
+        cachedPlatforms = PLATFORMS;
+    }
+    return cachedPlatforms;
+}
+
+function getActivePlatforms() {
+    return cachedPlatforms || PLATFORMS;
+}
+
 function update(dt) {
+    const isAdventure = currentMode === GAME_MODE.ADVENTURE;
+
+    // Camera update first (adventure only) — so terrain/platforms use current camera
+    if (isAdventure) {
+        updateCamera(player, dt);
+    }
+
+    const camera = getCamera();
+    const platforms = refreshPlatforms();
+
     // Difficulty tier announcements
     for (let i = lastDiffTier; i < DIFF_THRESHOLDS.length; i++) {
         if (survivalTime >= DIFF_THRESHOLDS[i]) {
@@ -143,13 +199,19 @@ function update(dt) {
     }
 
     const wasAirborne = !player.grounded;
-    updatePlayer(player, dt, bullets);
+    updatePlayer(player, dt, bullets, currentMode, camera, platforms);
     if (wasAirborne && player.grounded) {
         spawnLandingDust(player.x + player.width / 2, player.y + player.height);
     }
-    moveBullets(bullets, dt);
-    updateEnemies(enemies, player, dt);
-    updateSpawner(dt, enemies);
+
+    // Track distance for adventure mode
+    if (isAdventure) {
+        maxPlayerX = Math.max(maxPlayerX, player.x);
+    }
+
+    moveBullets(bullets, dt, currentMode, camera);
+    updateEnemies(enemies, player, dt, currentMode, camera, platforms);
+    updateSpawner(dt, enemies, currentMode, camera, platforms);
 
     if (comboTimer > 0) {
         comboTimer -= dt;
@@ -209,7 +271,7 @@ function update(dt) {
             if (player.invincible <= 0) {
                 triggerShake(6, 0.2);
                 playPlayerHit();
-                flashAlpha = 0.4; // red screen flash
+                flashAlpha = 0.4;
                 comboCount = 0;
                 comboTimer = 0;
             }
@@ -238,21 +300,23 @@ function update(dt) {
     }
 
     // Remove enemies that fell off the bottom
+    const fallLimit = isAdventure ? camera.y + CANVAS_HEIGHT + 100 : CANVAS_HEIGHT + 100;
     for (let i = enemies.length - 1; i >= 0; i--) {
-        if (enemies[i].y > CANVAS_HEIGHT + 100) enemies.splice(i, 1);
+        if (enemies[i].y > fallLimit) enemies.splice(i, 1);
     }
 
-    updateEffects(dt);
+    updateEffects(dt, platforms);
 
     // Fall death
-    if (player.y > CANVAS_HEIGHT + 50) {
+    const deathY = isAdventure ? camera.y + CANVAS_HEIGHT + 50 : CANVAS_HEIGHT + 50;
+    if (player.y > deathY) {
         player.health = 0;
     }
 
     // Death check — enter dying state with explosion
     if (player.health <= 0) {
         const px = player.x + player.width / 2;
-        const py = Math.min(player.y + player.height / 2, CANVAS_HEIGHT - 20);
+        const py = Math.min(player.y + player.height / 2, (isAdventure ? camera.y + CANVAS_HEIGHT : CANVAS_HEIGHT) - 20);
         for (let i = 0; i < 3; i++) spawnKillParticles(px, py, COLOR_PLAYER);
         triggerShake(12, 0.5);
         flashAlpha = 0.6;
@@ -263,13 +327,31 @@ function update(dt) {
 }
 
 function render(dt) {
+    const camera = getCamera();
+    const platforms = getActivePlatforms();
+    const isAdventure = currentMode === GAME_MODE.ADVENTURE;
+
     const shake = getShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime);
-    renderEffects(ctx);
 
-    // Combo indicator
+    // renderGame handles camera transform internally
+    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, currentMode, camera, platforms);
+
+    // World effects inside camera transform
+    if (isAdventure) {
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+        renderWorldEffects(ctx);
+        ctx.restore();
+    } else {
+        renderWorldEffects(ctx);
+    }
+
+    // Screen effects (announcements) always in screen space
+    renderScreenEffects(ctx);
+
+    // Combo indicator (screen space)
     if (comboCount > 1) {
         ctx.fillStyle = '#FFAA00';
         ctx.font = 'bold 18px monospace';
@@ -278,6 +360,15 @@ function render(dt) {
         ctx.fillText(`${comboCount}x COMBO`, CANVAS_WIDTH / 2, 50);
         ctx.globalAlpha = 1.0;
         ctx.textAlign = 'left';
+    }
+
+    // Distance display for adventure mode
+    if (isAdventure) {
+        const distMeters = Math.floor(maxPlayerX / 100);
+        ctx.fillStyle = '#88CCFF';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Distance: ${distMeters}m`, 10, 64);
     }
 
     ctx.restore();
@@ -289,4 +380,8 @@ function render(dt) {
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         ctx.globalAlpha = 1.0;
     }
+}
+
+export function getGameMode() {
+    return currentMode;
 }

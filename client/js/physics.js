@@ -13,10 +13,11 @@ export function applyGravity(entity, dt) {
     }
 }
 
-export function resolvePlatformCollisions(entity) {
+export function resolvePlatformCollisions(entity, platforms) {
+    const plats = platforms || PLATFORMS;
     entity.grounded = false;
 
-    for (const plat of PLATFORMS) {
+    for (const plat of plats) {
         if (!collides(entity, plat)) continue;
 
         const overlapLeft = (entity.x + entity.width) - plat.x;

@@ -5,7 +5,7 @@ import {
     FLYER_HEALTH, FLYER_CONTACT_DAMAGE, FLYER_SCORE_VALUE,
     TANK_WIDTH, TANK_HEIGHT, TANK_SPEED,
     TANK_HEALTH, TANK_CONTACT_DAMAGE, TANK_SCORE_VALUE,
-    JUMP_FORCE, CANVAS_WIDTH
+    JUMP_FORCE, CANVAS_WIDTH, GAME_MODE
 } from './constants.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
 
@@ -51,16 +51,18 @@ function wrapDx(enemyCx, playerCx) {
     return dx;
 }
 
-export function updateEnemies(enemies, player, dt) {
+export function updateEnemies(enemies, player, dt, mode, camera, platforms) {
     const playerCx = player.x + player.width / 2;
     const playerCy = player.y + player.height / 2;
+    const isAdventure = mode === GAME_MODE.ADVENTURE;
 
-    for (const enemy of enemies) {
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
         const enemyCx = enemy.x + enemy.width / 2;
         const enemyCy = enemy.y + enemy.height / 2;
 
         if (enemy.type === 'flyer') {
-            const dx = wrapDx(enemyCx, playerCx);
+            const dx = isAdventure ? (playerCx - enemyCx) : wrapDx(enemyCx, playerCx);
             const dy = playerCy - enemyCy;
             const len = Math.sqrt(dx * dx + dy * dy);
             if (len > 0) {
@@ -70,8 +72,8 @@ export function updateEnemies(enemies, player, dt) {
             enemy.x += enemy.vx * dt;
             enemy.y += enemy.vy * dt;
         } else {
-            // Runner and Tank: walk toward player via shortest path
-            const dx = wrapDx(enemyCx, playerCx);
+            // Runner and Tank: walk toward player
+            const dx = isAdventure ? (playerCx - enemyCx) : wrapDx(enemyCx, playerCx);
             enemy.vx = dx < 0 ? -enemy.speed : enemy.speed;
 
             // Runners jump toward player if player is significantly above
@@ -88,11 +90,18 @@ export function updateEnemies(enemies, player, dt) {
             applyGravity(enemy, dt);
             enemy.x += enemy.vx * dt;
             enemy.y += enemy.vy * dt;
-            resolvePlatformCollisions(enemy);
+            resolvePlatformCollisions(enemy, platforms);
         }
 
-        // Screen wrapping for all enemies
-        if (enemy.x + enemy.width < -20) enemy.x = CANVAS_WIDTH + 10;
-        if (enemy.x > CANVAS_WIDTH + 20) enemy.x = -enemy.width - 10;
+        if (isAdventure) {
+            // Adventure: despawn enemies far behind camera
+            if (enemy.x + enemy.width < camera.x - CANVAS_WIDTH * 2) {
+                enemies.splice(i, 1);
+            }
+        } else {
+            // Arena: screen wrapping
+            if (enemy.x + enemy.width < -20) enemy.x = CANVAS_WIDTH + 10;
+            if (enemy.x > CANVAS_WIDTH + 20) enemy.x = -enemy.width - 10;
+        }
     }
 }

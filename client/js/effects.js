@@ -38,7 +38,7 @@ export function spawnPickup(x, y, type) {
         y,
         width: 16,
         height: 16,
-        type, // 'health', 'shotgun', 'rapid'
+        type,
         healAmount: type === 'health' ? 20 : 0,
         life: 6.0,
         vy: -100,
@@ -60,7 +60,6 @@ export function spawnLandingDust(x, y) {
     }
 }
 
-// Convenience aliases
 export function spawnHealthPickup(x, y) { spawnPickup(x, y, 'health'); }
 
 export function getPickups() { return pickups; }
@@ -83,7 +82,7 @@ export function showAnnouncement(text) {
     announcement = { text, life: 2.0, maxLife: 2.0 };
 }
 
-export function updateEffects(dt) {
+export function updateEffects(dt, platforms) {
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx * dt;
@@ -104,7 +103,19 @@ export function updateEffects(dt) {
         const p = pickups[i];
         p.vy += 600 * dt;
         p.y += p.vy * dt;
-        if (p.y > 540) { p.y = 540; p.vy = 0; }
+        // Find nearest platform below the pickup
+        let landY = 540;
+        if (platforms) {
+            for (const plat of platforms) {
+                if (p.x + p.width > plat.x && p.x < plat.x + plat.width) {
+                    const platTop = plat.y - p.height;
+                    if (platTop >= p.y - 2 && platTop < landY) {
+                        landY = platTop;
+                    }
+                }
+            }
+        }
+        if (p.y > landY) { p.y = landY; p.vy = 0; }
         p.life -= dt;
         if (p.life <= 0) pickups.splice(i, 1);
     }
@@ -123,7 +134,8 @@ const PICKUP_COLORS = {
     rapid: '#44DDFF',
 };
 
-export function renderEffects(ctx) {
+// World-space effects: particles, pickups, score popups (rendered inside camera transform)
+export function renderWorldEffects(ctx) {
     // Particles
     for (const p of particles) {
         ctx.globalAlpha = p.life / p.maxLife;
@@ -142,19 +154,16 @@ export function renderEffects(ctx) {
         const offset = (p.width - s) / 2;
         ctx.fillRect(p.x + offset, p.y + offset, s, s);
 
-        // Icon
         ctx.fillStyle = '#ffffff';
         if (p.type === 'health') {
             ctx.fillRect(p.x + 6, p.y + 3, 4, 10);
             ctx.fillRect(p.x + 3, p.y + 6, 10, 4);
         } else if (p.type === 'shotgun') {
-            // "S" letter
             ctx.font = 'bold 11px monospace';
             ctx.textAlign = 'center';
             ctx.fillText('S', p.x + 8, p.y + 13);
             ctx.textAlign = 'left';
         } else if (p.type === 'rapid') {
-            // "R" letter
             ctx.font = 'bold 11px monospace';
             ctx.textAlign = 'center';
             ctx.fillText('R', p.x + 8, p.y + 13);
@@ -173,8 +182,10 @@ export function renderEffects(ctx) {
     }
     ctx.globalAlpha = 1.0;
     ctx.textAlign = 'left';
+}
 
-    // Announcement
+// Screen-space effects: announcements (rendered outside camera transform)
+export function renderScreenEffects(ctx) {
     if (announcement) {
         ctx.globalAlpha = Math.min(announcement.life, 1.0);
         ctx.fillStyle = '#FFFF00';

@@ -12,8 +12,9 @@ export function initInput(canvas) {
 
     canvas.addEventListener('mousemove', e => {
         const rect = canvas.getBoundingClientRect();
-        mouse.x = e.clientX - rect.left;
-        mouse.y = e.clientY - rect.top;
+        // Scale mouse coordinates from visual size back to logical canvas size
+        mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
     });
     canvas.addEventListener('mousedown', e => {
         if (e.button === 0) {
@@ -35,6 +36,15 @@ export function isKeyDown(key) {
 
 export function getMouse() {
     return mouse;
+}
+
+export function getWorldMouse(camera) {
+    return {
+        x: mouse.x + camera.x,
+        y: mouse.y + camera.y,
+        down: mouse.down,
+        clicked: mouse.clicked,
+    };
 }
 
 export function resetFrameInput() {

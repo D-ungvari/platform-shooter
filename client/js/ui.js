@@ -1,11 +1,14 @@
 import { fetchScores, submitScore } from './api.js';
+import { GAME_MODE } from './constants.js';
 
 let menuEl, gameOverEl, pauseEl, scoreListEl, goScoreListEl;
 let finalScoreEl, nameInput, submitBtn, playAgainBtn, rankEl, errorEl;
-let onStart, onRestart, onResume;
+let onStartArena, onStartAdventure, onRestart, onResume;
+let lastMode = GAME_MODE.ARENA;
 
 export function initUI(callbacks) {
-    onStart = callbacks.onStart;
+    onStartArena = callbacks.onStartArena;
+    onStartAdventure = callbacks.onStartAdventure;
     onRestart = callbacks.onRestart;
     onResume = callbacks.onResume;
 
@@ -26,16 +29,14 @@ export function initUI(callbacks) {
     // Pause screen
     pauseEl = document.getElementById('pause-screen');
 
-    // Menu start
-    document.addEventListener('keydown', e => {
-        if (menuEl.style.display !== 'none' && (e.key === 'Enter' || e.key === ' ')) {
-            startGame();
-        }
+    // Mode buttons
+    document.getElementById('btn-arena').addEventListener('click', () => {
+        lastMode = GAME_MODE.ARENA;
+        startGame(onStartArena);
     });
-    menuEl.addEventListener('click', e => {
-        if (e.target === menuEl || e.target.closest('.menu-content')) {
-            startGame();
-        }
+    document.getElementById('btn-adventure').addEventListener('click', () => {
+        lastMode = GAME_MODE.ADVENTURE;
+        startGame(onStartAdventure);
     });
 
     // Game over buttons
@@ -58,9 +59,13 @@ export function initUI(callbacks) {
     loadScores(scoreListEl);
 }
 
-function startGame() {
+function startGame(startFn) {
     menuEl.style.display = 'none';
-    onStart();
+    startFn();
+}
+
+export function getLastMode() {
+    return lastMode;
 }
 
 export function showMenu() {

@@ -2,16 +2,17 @@ import {
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, JUMP_FORCE,
     PLAYER_MAX_HEALTH, INVINCIBILITY_DURATION, SHOOT_COOLDOWN,
     BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE,
-    CANVAS_WIDTH, CANVAS_HEIGHT, PLATFORMS
+    CANVAS_WIDTH, CANVAS_HEIGHT, PLATFORMS, GAME_MODE
 } from './constants.js';
-import { isKeyDown, getMouse } from './input.js';
+import { isKeyDown, getMouse, getWorldMouse } from './input.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
 import { playShoot, playJump } from './audio.js';
 import { triggerMuzzleFlash } from './renderer.js';
 
-export function createPlayer() {
+export function createPlayer(mode) {
+    const startX = mode === GAME_MODE.ADVENTURE ? 200 : CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2;
     return {
-        x: CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2,
+        x: startX,
         y: PLATFORMS[0].y - PLAYER_HEIGHT,
         width: PLAYER_WIDTH,
         height: PLAYER_HEIGHT,
@@ -28,7 +29,7 @@ export function createPlayer() {
     };
 }
 
-export function updatePlayer(player, dt, bullets) {
+export function updatePlayer(player, dt, bullets, mode, camera, platforms) {
     // Horizontal movement (WASD + arrow keys)
     if (isKeyDown('a') || isKeyDown('arrowleft')) {
         player.vx = -PLAYER_SPEED;
@@ -53,14 +54,19 @@ export function updatePlayer(player, dt, bullets) {
     player.y += player.vy * dt;
 
     // Platform collisions
-    resolvePlatformCollisions(player);
+    resolvePlatformCollisions(player, platforms);
 
-    // Screen wrapping — walk off one side, appear on the other
-    if (player.x + player.width < 0) player.x = CANVAS_WIDTH;
-    if (player.x > CANVAS_WIDTH) player.x = -player.width;
+    if (mode === GAME_MODE.ADVENTURE) {
+        // Adventure: left wall at x=0, no right boundary
+        if (player.x < 0) player.x = 0;
+    } else {
+        // Arena: screen wrapping
+        if (player.x + player.width < 0) player.x = CANVAS_WIDTH;
+        if (player.x > CANVAS_WIDTH) player.x = -player.width;
+    }
 
-    // Facing direction based on mouse
-    const mouse = getMouse();
+    // Facing direction based on mouse (world coords in adventure)
+    const mouse = mode === GAME_MODE.ADVENTURE ? getWorldMouse(camera) : getMouse();
     const cx = player.x + player.width / 2;
     player.facingRight = mouse.x >= cx;
 
@@ -73,9 +79,10 @@ export function updatePlayer(player, dt, bullets) {
     }
 
     // Shooting — auto-fire while holding mouse button
+    const screenMouse = getMouse();
     const cooldown = player.weapon === 'rapid' ? SHOOT_COOLDOWN * 0.4 : SHOOT_COOLDOWN;
     player.shootCooldown -= dt;
-    if ((mouse.clicked || mouse.down) && player.shootCooldown <= 0) {
+    if ((screenMouse.clicked || screenMouse.down) && player.shootCooldown <= 0) {
         fireBullet(player, mouse, bullets);
         player.shootCooldown = cooldown;
         playShoot();
