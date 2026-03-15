@@ -123,12 +123,13 @@ function generateChunk(index) {
         let type = 'solid';
         if (index >= 5) {
             const typeRoll = rng();
-            if (index >= 15 && typeRoll < 0.08) {
-                type = 'moving';
-            } else if (index >= 15 && typeRoll < 0.16) {
-                type = 'bounce';
-            } else if (typeRoll < 0.12 + difficulty * 0.05) {
+            const crumbleChance = 0.12 + difficulty * 0.05;
+            if (typeRoll < crumbleChance) {
                 type = 'crumbling';
+            } else if (index >= 15 && typeRoll < crumbleChance + 0.08) {
+                type = 'bounce';
+            } else if (index >= 15 && typeRoll < crumbleChance + 0.16) {
+                type = 'moving';
             }
         }
 

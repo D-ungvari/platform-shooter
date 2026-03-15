@@ -106,8 +106,20 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
     ctx.globalAlpha = 1.0;
 
     // Mountains — parallax (tiling in adventure mode)
-    const farColor = `rgb(${20 + Math.floor(timeRatio * 15)}, ${18 - Math.floor(timeRatio * 5)}, ${35 - Math.floor(timeRatio * 10)})`;
-    const nearColor = `rgb(${30 + Math.floor(timeRatio * 15)}, ${26 - Math.floor(timeRatio * 8)}, ${40 - Math.floor(timeRatio * 12)})`;
+    let farColor, nearColor;
+    if (isAdventure && zoneData && zoneData.zone) {
+        const z = zoneData.zone;
+        const nz = zoneData.nextZone;
+        const b = zoneData.blend || 0;
+        const mt = z.mt;
+        const mtn = nz ? nz.mt : mt;
+        farColor = `rgb(${Math.round(mt[0] + (mtn[0] - mt[0]) * b)}, ${Math.round(mt[1] + (mtn[1] - mt[1]) * b)}, ${Math.round(mt[2] + (mtn[2] - mt[2]) * b)})`;
+        nearColor = `rgb(${Math.round(mt[0] + 10 + (mtn[0] + 10 - mt[0] - 10) * b)}, ${Math.round(mt[1] + 8 + (mtn[1] + 8 - mt[1] - 8) * b)}, ${Math.round(mt[2] + 5 + (mtn[2] + 5 - mt[2] - 5) * b)})`;
+    } else {
+        const timeRatio = survivalTime !== undefined ? Math.min(survivalTime / 180, 1) : 0;
+        farColor = `rgb(${20 + Math.floor(timeRatio * 15)}, ${18 - Math.floor(timeRatio * 5)}, ${35 - Math.floor(timeRatio * 10)})`;
+        nearColor = `rgb(${30 + Math.floor(timeRatio * 15)}, ${26 - Math.floor(timeRatio * 8)}, ${40 - Math.floor(timeRatio * 12)})`;
+    }
 
     if (isAdventure) {
         drawMountainLayerTiled(farMountains, farColor, gameTime, cam.x * 0.1, farTotalWidth);
@@ -313,7 +325,7 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
     }
 
     // HUD (always screen-space)
-    drawHUD(player, score, killCount, survivalTime, enemies.length);
+    drawHUD(player, score, killCount, survivalTime, enemies.length, isAdventure);
 }
 
 // --- Helpers ---
@@ -703,7 +715,7 @@ function drawPlayer(player, isAdventure, cam) {
 
 // --- HUD ---
 
-function drawHUD(player, score, killCount, survivalTime, enemyCount) {
+function drawHUD(player, score, killCount, survivalTime, enemyCount, isAdventure) {
     ctx.fillStyle = '#ffffff';
     ctx.font = '12px monospace';
     ctx.textAlign = 'left';
@@ -727,10 +739,13 @@ function drawHUD(player, score, killCount, survivalTime, enemyCount) {
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, barY, barW, barH);
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '20px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText('Score: ' + score, CANVAS_WIDTH - 10, 26);
+    // Adventure mode draws combined score (kills + distance) from game.js
+    if (!isAdventure) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '20px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('Score: ' + score, CANVAS_WIDTH - 10, 26);
+    }
 
     if (survivalTime !== undefined) {
         const m = Math.floor(survivalTime / 60);
