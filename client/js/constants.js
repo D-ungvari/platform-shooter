@@ -61,6 +61,24 @@ export const COLOR_BULLET = '#FFFF00';
 export const COLOR_PLATFORM = '#666666';
 export const COLOR_GROUND = '#444444';
 
+// Power-Ups
+export const POWERUP_SPEED_MULT = 1.5;
+export const POWERUP_SPEED_DURATION = 8;
+export const POWERUP_JUMP_MULT = 1.8;
+export const POWERUP_JUMP_DURATION = 10;
+export const POWERUP_DOUBLE_SPREAD = 0.175; // ~10 degrees in radians
+export const POWERUP_DOUBLE_DURATION = 10;
+export const POWERUP_SHIELD_HITS = 3;
+export const POWERUP_GIANT_SCALE = 1.5;
+export const POWERUP_GIANT_DAMAGE_MULT = 1.5;
+export const POWERUP_GIANT_DURATION = 8;
+
+// Terrain
+export const CHUNK_WIDTH = 2048;
+export const CRUMBLE_DELAY = 1.0;
+export const CRUMBLE_RESPAWN = 5.0;
+export const BOUNCE_FORCE_MULT = 2.0;
+
 // Platforms
 export const PLATFORMS = [
     { x: 0, y: 556, width: 1024, height: 20 },     // Ground

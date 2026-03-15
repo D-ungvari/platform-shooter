@@ -132,6 +132,22 @@ const PICKUP_COLORS = {
     health: '#44FF44',
     shotgun: '#FF8844',
     rapid: '#44DDFF',
+    speed: '#FFFF44',
+    superJump: '#44FF88',
+    doubleShot: '#FF44FF',
+    shield: '#88BBFF',
+    giant: '#FF8844',
+};
+
+const PICKUP_ICONS = {
+    health: '+',
+    shotgun: 'S',
+    rapid: 'R',
+    speed: '>>',
+    superJump: '^',
+    doubleShot: '2x',
+    shield: 'O',
+    giant: '*',
 };
 
 // World-space effects: particles, pickups, score popups (rendered inside camera transform)
@@ -154,19 +170,16 @@ export function renderWorldEffects(ctx) {
         const offset = (p.width - s) / 2;
         ctx.fillRect(p.x + offset, p.y + offset, s, s);
 
+        // Icon
         ctx.fillStyle = '#ffffff';
         if (p.type === 'health') {
             ctx.fillRect(p.x + 6, p.y + 3, 4, 10);
             ctx.fillRect(p.x + 3, p.y + 6, 10, 4);
-        } else if (p.type === 'shotgun') {
-            ctx.font = 'bold 11px monospace';
+        } else {
+            const icon = PICKUP_ICONS[p.type] || '?';
+            ctx.font = 'bold 10px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('S', p.x + 8, p.y + 13);
-            ctx.textAlign = 'left';
-        } else if (p.type === 'rapid') {
-            ctx.font = 'bold 11px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText('R', p.x + 8, p.y + 13);
+            ctx.fillText(icon, p.x + 8, p.y + 12);
             ctx.textAlign = 'left';
         }
         ctx.globalAlpha = 1.0;

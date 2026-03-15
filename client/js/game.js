@@ -1,11 +1,11 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER, PLAYER_MAX_HEALTH, GAME_MODE, PLATFORMS } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER, PLAYER_MAX_HEALTH, GAME_MODE, PLATFORMS, CRUMBLE_DELAY, CRUMBLE_RESPAWN } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
-import { createPlayer, updatePlayer, damagePlayer, giveWeapon } from './player.js';
+import { createPlayer, updatePlayer, damagePlayer, giveWeapon, applyPowerUp, hasPowerUp } from './player.js';
 import { moveBullets } from './bullet.js';
 import { updateEnemies } from './enemy.js';
 import { resetSpawner, updateSpawner } from './spawner.js';
-import { collides } from './physics.js';
+import { collides, checkBlockCollisions } from './physics.js';
 import { initUI, showMenu, showGameOver, showPause, hidePause } from './ui.js';
 import {
     updateEffects, renderWorldEffects, renderScreenEffects, resetEffects,
@@ -13,12 +13,21 @@ import {
     spawnHealthPickup, spawnPickup, getPickups, removePickup, showAnnouncement,
     spawnLandingDust
 } from './effects.js';
-import { playEnemyDeath, playPlayerHit, playPickup, playPlayerDeath } from './audio.js';
+import { playEnemyDeath, playPlayerHit, playPickup, playPlayerDeath, playPowerUp, playShieldHit, playBlockBreak, playBounce, playCrumble, playCheckpoint } from './audio.js';
 import { createCamera, updateCamera, getCamera, resetCamera } from './camera.js';
-import { createTerrain, updateTerrain, getVisiblePlatforms, resetTerrain } from './terrain.js';
+import { createTerrain, updateTerrain, getVisiblePlatforms, getVisibleBlocks, resetTerrain } from './terrain.js';
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', DYING: 'DYING', GAME_OVER: 'GAME_OVER' };
 const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
+
+// Difficulty zones (adventure mode)
+const ZONES = [
+    { name: 'Twilight Plains', dist: 0, bg: [10, 10, 30], plat: '#555566', mt: [20, 18, 35] },
+    { name: 'Crimson Wastes', dist: 1000, bg: [30, 8, 15], plat: '#665544', mt: [35, 15, 20] },
+    { name: 'Frozen Depths', dist: 2000, bg: [8, 15, 35], plat: '#556677', mt: [15, 25, 40] },
+    { name: 'Toxic Swamp', dist: 3000, bg: [10, 25, 12], plat: '#556644', mt: [18, 35, 20] },
+    { name: 'The Void', dist: 4000, bg: [5, 3, 15], plat: '#444455', mt: [12, 8, 25] },
+];
 
 let currentMode = GAME_MODE.ARENA;
 
@@ -30,6 +39,7 @@ let escapeHeld = false;
 let killCount = 0;
 let nextWaveAt = 10;
 let survivalTime = 0;
+let gameTime = 0;
 
 // Combo system
 let comboCount = 0;
@@ -48,9 +58,12 @@ let flashAlpha = 0;
 
 // Adventure mode tracking
 let maxPlayerX = 0;
+let lastCheckpoint = 0;
+let currentZone = 0;
 
-// Cached platforms for current frame (avoid redundant terrain queries)
+// Cached per frame
 let cachedPlatforms = null;
+let cachedBlocks = null;
 
 export function initGame() {
     canvas = document.getElementById('game-canvas');
@@ -93,10 +106,13 @@ function startPlaying() {
     comboCount = 0;
     comboTimer = 0;
     survivalTime = 0;
+    gameTime = 0;
     deathTimer = 0;
     flashAlpha = 0;
     lastDiffTier = 0;
     maxPlayerX = 0;
+    lastCheckpoint = 0;
+    currentZone = 0;
     resetSpawner();
     resetEffects();
 
@@ -131,6 +147,7 @@ function loop(timestamp) {
 
         if (state === STATE.PLAYING) {
             survivalTime += dt;
+            gameTime += dt;
             update(dt);
             render(dt);
         }
@@ -142,13 +159,16 @@ function loop(timestamp) {
         if (!isKeyDown('escape')) escapeHeld = false;
     } else if (state === STATE.DYING) {
         deathTimer -= dt;
+        gameTime += dt;
         updateEffects(dt, getActivePlatforms());
         if (flashAlpha > 0) flashAlpha -= dt * 2;
         render(dt);
         if (deathTimer <= 0) {
             state = STATE.GAME_OVER;
             const timeStr = formatTime(survivalTime);
-            showGameOver(score, killCount, timeStr);
+            const distMeters = Math.floor(maxPlayerX / 100);
+            const displayScore = currentMode === GAME_MODE.ADVENTURE ? score + distMeters : score;
+            showGameOver(displayScore, killCount, timeStr);
         }
     }
 
@@ -167,8 +187,10 @@ function refreshPlatforms() {
         const camera = getCamera();
         updateTerrain(camera.x);
         cachedPlatforms = getVisiblePlatforms(camera.x);
+        cachedBlocks = getVisibleBlocks(camera.x);
     } else {
         cachedPlatforms = PLATFORMS;
+        cachedBlocks = [];
     }
     return cachedPlatforms;
 }
@@ -177,16 +199,78 @@ function getActivePlatforms() {
     return cachedPlatforms || PLATFORMS;
 }
 
+function getActiveBlocks() {
+    return cachedBlocks || [];
+}
+
+// Update moving platforms and crumbling timers
+function updateSpecialPlatforms(platforms, dt) {
+    for (const plat of platforms) {
+        if (plat.type === 'moving') {
+            plat.prevX = plat.x;
+            plat.prevY = plat.y;
+            if (plat.moveAxis === 'h') {
+                plat.x = plat.originX + Math.sin(gameTime * plat.moveSpeed + plat.movePhase) * plat.moveRange;
+            } else {
+                plat.y = plat.originY + Math.sin(gameTime * plat.moveSpeed + plat.movePhase) * plat.moveRange;
+            }
+        } else if (plat.type === 'crumbling') {
+            if (plat.crumbleState === 'shaking') {
+                plat.crumbleTimer -= dt;
+                if (plat.crumbleTimer <= 0) {
+                    plat.crumbleState = 'broken';
+                    plat.respawnTimer = CRUMBLE_RESPAWN;
+                    spawnKillParticles(plat.x + plat.width / 2, plat.y + plat.height / 2, '#887766');
+                    playCrumble();
+                }
+            } else if (plat.crumbleState === 'broken') {
+                plat.respawnTimer -= dt;
+                if (plat.respawnTimer <= 0) {
+                    plat.crumbleState = 'idle';
+                }
+            }
+        }
+    }
+}
+
+// Check if player is standing on a crumbling platform and trigger shake
+function checkCrumbleTrigger(player, platforms) {
+    if (!player.grounded) return;
+    for (const plat of platforms) {
+        if (plat.type !== 'crumbling' || plat.crumbleState !== 'idle') continue;
+        if (player.y + player.height >= plat.y - 2 && player.y + player.height <= plat.y + 4 &&
+            player.x + player.width > plat.x && player.x < plat.x + plat.width) {
+            plat.crumbleState = 'shaking';
+            plat.crumbleTimer = CRUMBLE_DELAY;
+        }
+    }
+}
+
+// Apply moving platform horizontal carry (vertical is handled by collision resolution)
+function applyMovingPlatformRide(entity) {
+    if (entity.ridingPlatform && entity.ridingPlatform.type === 'moving') {
+        const p = entity.ridingPlatform;
+        if (p.moveAxis === 'h') {
+            entity.x += (p.x - (p.prevX || p.x));
+        }
+    }
+}
+
 function update(dt) {
     const isAdventure = currentMode === GAME_MODE.ADVENTURE;
 
-    // Camera update first (adventure only) — so terrain/platforms use current camera
     if (isAdventure) {
         updateCamera(player, dt);
     }
 
     const camera = getCamera();
     const platforms = refreshPlatforms();
+    const blocks = getActiveBlocks();
+
+    // Update moving/crumbling platforms before entity physics
+    if (isAdventure) {
+        updateSpecialPlatforms(platforms, dt);
+    }
 
     // Difficulty tier announcements
     for (let i = lastDiffTier; i < DIFF_THRESHOLDS.length; i++) {
@@ -200,13 +284,65 @@ function update(dt) {
 
     const wasAirborne = !player.grounded;
     updatePlayer(player, dt, bullets, currentMode, camera, platforms);
-    if (wasAirborne && player.grounded) {
-        spawnLandingDust(player.x + player.width / 2, player.y + player.height);
+
+    // Apply moving platform ride (player + enemies)
+    if (isAdventure) {
+        applyMovingPlatformRide(player);
+        for (const enemy of enemies) {
+            applyMovingPlatformRide(enemy);
+        }
     }
 
-    // Track distance for adventure mode
+    if (wasAirborne && player.grounded) {
+        spawnLandingDust(player.x + player.width / 2, player.y + player.height);
+        if (player.bouncedThisFrame) {
+            playBounce();
+            player.bouncedThisFrame = false;
+        }
+    }
+
+    // Crumble trigger
+    if (isAdventure) {
+        checkCrumbleTrigger(player, platforms);
+    }
+
+    // Destructible block collisions (adventure only)
+    if (isAdventure && blocks.length > 0) {
+        const hitBlocks = checkBlockCollisions(player, blocks);
+        for (const block of hitBlocks) {
+            block.broken = true;
+            const bx = block.x + block.width / 2;
+            const by = block.y + block.height / 2;
+            spawnKillParticles(bx, by, '#FFDD44');
+            playBlockBreak();
+
+            // Drop power-up based on height
+            const dropType = getBlockDrop(block.worldY);
+            if (dropType) {
+                spawnPickup(bx, by, dropType);
+            }
+        }
+    }
+
+    // Track distance
     if (isAdventure) {
         maxPlayerX = Math.max(maxPlayerX, player.x);
+
+        // Checkpoints every 500m
+        const distMeters = Math.floor(maxPlayerX / 100);
+        if (distMeters >= lastCheckpoint + 500) {
+            lastCheckpoint += 500;
+            showAnnouncement(`Checkpoint: ${lastCheckpoint}m!`);
+            playCheckpoint();
+        }
+
+        // Zone transitions
+        const newZone = getZoneIndex(distMeters);
+        if (newZone > currentZone) {
+            currentZone = newZone;
+            showAnnouncement(ZONES[currentZone].name);
+            triggerShake(4, 0.3);
+        }
     }
 
     moveBullets(bullets, dt, currentMode, camera);
@@ -218,7 +354,6 @@ function update(dt) {
         if (comboTimer <= 0) comboCount = 0;
     }
 
-    // Flash decay
     if (flashAlpha > 0) flashAlpha -= dt * 3;
 
     // Bullet-enemy collisions
@@ -232,6 +367,13 @@ function update(dt) {
             if (collides(bBox, enemies[j])) {
                 enemies[j].health -= b.damage;
                 bullets.splice(i, 1);
+
+                // Giant mode knockback
+                if (isAdventure && hasPowerUp(player, 'giant')) {
+                    const dir = enemies[j].x > player.x ? 1 : -1;
+                    enemies[j].vx += dir * 200;
+                }
+
                 if (enemies[j].health <= 0) {
                     const ex = enemies[j].x + enemies[j].width / 2;
                     const ey = enemies[j].y + enemies[j].height / 2;
@@ -249,10 +391,18 @@ function update(dt) {
                     spawnScorePopup(ex, ey - 20, comboText);
                     killCount++;
 
+                    // Drops — adventure mode has extra power-up drops
                     const dropRoll = Math.random();
                     if (dropRoll < 0.15) spawnHealthPickup(ex, ey);
                     else if (dropRoll < 0.20) spawnPickup(ex, ey, 'shotgun');
                     else if (dropRoll < 0.25) spawnPickup(ex, ey, 'rapid');
+                    else if (isAdventure) {
+                        if (dropRoll < 0.32) spawnPickup(ex, ey, 'speed');
+                        else if (dropRoll < 0.38) spawnPickup(ex, ey, 'superJump');
+                        else if (dropRoll < 0.43) spawnPickup(ex, ey, 'doubleShot');
+                        else if (dropRoll < 0.46) spawnPickup(ex, ey, 'shield');
+                        else if (dropRoll < 0.48) spawnPickup(ex, ey, 'giant');
+                    }
 
                     if (killCount >= nextWaveAt) {
                         showAnnouncement(`Wave ${Math.floor(killCount / 10) + 1}!`);
@@ -269,9 +419,14 @@ function update(dt) {
     for (const enemy of enemies) {
         if (collides(player, enemy)) {
             if (player.invincible <= 0) {
-                triggerShake(6, 0.2);
-                playPlayerHit();
-                flashAlpha = 0.4;
+                const hasShield = player.shieldHits > 0;
+                triggerShake(hasShield ? 3 : 6, 0.2);
+                if (hasShield) {
+                    playShieldHit();
+                } else {
+                    playPlayerHit();
+                    flashAlpha = 0.4;
+                }
                 comboCount = 0;
                 comboTimer = 0;
             }
@@ -284,22 +439,36 @@ function update(dt) {
     for (let i = pickups.length - 1; i >= 0; i--) {
         if (collides(player, pickups[i])) {
             const pu = pickups[i];
-            playPickup();
             if (pu.type === 'health') {
+                playPickup();
                 player.health = Math.min(player.health + pu.healAmount, PLAYER_MAX_HEALTH);
                 spawnScorePopup(pu.x + 8, pu.y - 10, 'HP');
             } else if (pu.type === 'shotgun') {
+                playPickup();
                 giveWeapon(player, 'shotgun', 8);
                 showAnnouncement('SHOTGUN!');
             } else if (pu.type === 'rapid') {
+                playPickup();
                 giveWeapon(player, 'rapid', 8);
                 showAnnouncement('RAPID FIRE!');
+            } else {
+                // New power-up types
+                playPowerUp();
+                applyPowerUp(player, pu.type);
+                const labels = {
+                    speed: 'SPEED BOOST!',
+                    superJump: 'SUPER JUMP!',
+                    doubleShot: 'DOUBLE SHOT!',
+                    shield: 'SHIELD!',
+                    giant: 'GIANT MODE!',
+                };
+                showAnnouncement(labels[pu.type] || pu.type.toUpperCase() + '!');
             }
             removePickup(i);
         }
     }
 
-    // Remove enemies that fell off the bottom
+    // Remove enemies that fell off
     const fallLimit = isAdventure ? camera.y + CANVAS_HEIGHT + 100 : CANVAS_HEIGHT + 100;
     for (let i = enemies.length - 1; i >= 0; i--) {
         if (enemies[i].y > fallLimit) enemies.splice(i, 1);
@@ -313,7 +482,7 @@ function update(dt) {
         player.health = 0;
     }
 
-    // Death check — enter dying state with explosion
+    // Death check
     if (player.health <= 0) {
         const px = player.x + player.width / 2;
         const py = Math.min(player.y + player.height / 2, (isAdventure ? camera.y + CANVAS_HEIGHT : CANVAS_HEIGHT) - 20);
@@ -326,17 +495,64 @@ function update(dt) {
     }
 }
 
+function getBlockDrop(worldY) {
+    const roll = Math.random();
+    if (worldY < 200) {
+        // High blocks — 80% drop rate, uncommon/rare
+        if (roll < 0.25) return 'shield';
+        if (roll < 0.50) return 'giant';
+        if (roll < 0.80) return 'doubleShot';
+        return null;
+    } else if (worldY < 350) {
+        // Mid blocks — 70% drop rate
+        if (roll < 0.25) return 'speed';
+        if (roll < 0.45) return 'doubleShot';
+        if (roll < 0.70) return 'superJump';
+        return null;
+    } else {
+        // Low blocks — 60% drop rate
+        if (roll < 0.25) return 'superJump';
+        if (roll < 0.45) return 'health';
+        if (roll < 0.60) return 'speed';
+        return null;
+    }
+}
+
+function getZoneIndex(distMeters) {
+    for (let i = ZONES.length - 1; i >= 0; i--) {
+        if (distMeters >= ZONES[i].dist) return i;
+    }
+    return 0;
+}
+
+function getZoneData() {
+    const distMeters = Math.floor(maxPlayerX / 100);
+    const zi = getZoneIndex(distMeters);
+    const zone = ZONES[zi];
+    const nextZone = ZONES[zi + 1];
+    if (!nextZone) return { zone, blend: 0 };
+    // Blend over 100m near zone boundary
+    const distIntoZone = distMeters - zone.dist;
+    const zoneWidth = nextZone.dist - zone.dist;
+    const transitionStart = zoneWidth - 100;
+    if (distIntoZone > transitionStart) {
+        return { zone, nextZone, blend: (distIntoZone - transitionStart) / 100 };
+    }
+    return { zone, blend: 0 };
+}
+
 function render(dt) {
     const camera = getCamera();
     const platforms = getActivePlatforms();
+    const blocks = getActiveBlocks();
     const isAdventure = currentMode === GAME_MODE.ADVENTURE;
 
     const shake = getShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
 
-    // renderGame handles camera transform internally
-    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, currentMode, camera, platforms);
+    const zoneData = isAdventure ? getZoneData() : null;
+    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, currentMode, camera, platforms, blocks, zoneData, gameTime);
 
     // World effects inside camera transform
     if (isAdventure) {
@@ -348,10 +564,10 @@ function render(dt) {
         renderWorldEffects(ctx);
     }
 
-    // Screen effects (announcements) always in screen space
+    // Screen effects
     renderScreenEffects(ctx);
 
-    // Combo indicator (screen space)
+    // Combo indicator
     if (comboCount > 1) {
         ctx.fillStyle = '#FFAA00';
         ctx.font = 'bold 18px monospace';
@@ -362,18 +578,40 @@ function render(dt) {
         ctx.textAlign = 'left';
     }
 
-    // Distance display for adventure mode
+    // Adventure HUD extras
     if (isAdventure) {
         const distMeters = Math.floor(maxPlayerX / 100);
+        const displayScore = score + distMeters;
+
         ctx.fillStyle = '#88CCFF';
         ctx.font = 'bold 14px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(`Distance: ${distMeters}m`, 10, 64);
+
+        // Active power-ups
+        let puY = 82;
+        const puColors = { speed: '#FFFF44', superJump: '#44FF88', doubleShot: '#FF44FF', shield: '#88BBFF', giant: '#FF8844' };
+        const puLabels = { speed: 'SPD', superJump: 'JMP', doubleShot: 'DBL', shield: 'SHD', giant: 'BIG' };
+        for (const type in player.activePowerUps) {
+            const timer = player.activePowerUps[type];
+            ctx.fillStyle = puColors[type] || '#fff';
+            ctx.font = 'bold 11px monospace';
+            const label = puLabels[type] || type.slice(0, 3).toUpperCase();
+            const display = type === 'shield' ? `${label} ${player.shieldHits}` : `${label} ${Math.ceil(timer)}s`;
+            ctx.fillText(display, 10, puY);
+            puY += 16;
+        }
+
+        // Show combined score in HUD
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '20px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('Score: ' + displayScore, CANVAS_WIDTH - 10, 26);
     }
 
     ctx.restore();
 
-    // Screen flash (damage / death)
+    // Screen flash
     if (flashAlpha > 0) {
         ctx.fillStyle = '#FF0000';
         ctx.globalAlpha = Math.max(0, flashAlpha);

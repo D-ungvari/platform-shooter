@@ -1,6 +1,5 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, CHUNK_WIDTH, CRUMBLE_DELAY, CRUMBLE_RESPAWN } from './constants.js';
 
-export const CHUNK_WIDTH = 2048;
 const MAX_GAP_X = 260;
 const MAX_REACH_Y = 130;
 const MIN_PLATFORM_W = 100;
@@ -8,6 +7,7 @@ const MAX_PLATFORM_W = 250;
 const PLATFORM_H = 16;
 const GROUND_Y = 556;
 const GROUND_H = 20;
+const BLOCK_SIZE = 24;
 
 // Seed-based RNG (mulberry32)
 function mulberry32(seed) {
@@ -27,7 +27,6 @@ export function createTerrain() {
         chunks: new Map(),
         seed: Date.now(),
     };
-    // Pre-generate starting chunks
     ensureChunks(0);
     return terrain;
 }
@@ -60,25 +59,20 @@ function generateChunk(index) {
     const rng = mulberry32(terrain.seed + index * 7919);
     const startX = index * CHUNK_WIDTH;
     const platforms = [];
+    const blocks = [];
 
-    // Ground platform for every chunk
+    // Ground platform
     platforms.push({
-        x: startX,
-        y: GROUND_Y,
-        width: CHUNK_WIDTH,
-        height: GROUND_H,
-        type: 'ground',
+        x: startX, y: GROUND_Y, width: CHUNK_WIDTH, height: GROUND_H, type: 'ground',
     });
 
-    // Difficulty scaling: easier early chunks
     const difficulty = Math.min(1, Math.max(0, (index - 3) / 15));
 
-    // Rest zone check: every 4-6 chunks (based on seed)
+    // Rest zone check
     const restInterval = 4 + Math.floor(rng() * 3);
     const isRestZone = index > 0 && index % restInterval === 0;
 
     if (isRestZone) {
-        // Rest zones: wide flat platforms, easy
         const platCount = 2 + Math.floor(rng() * 2);
         for (let i = 0; i < platCount; i++) {
             const w = 180 + rng() * 100;
@@ -86,19 +80,17 @@ function generateChunk(index) {
             const y = GROUND_Y - 100 - rng() * 80;
             platforms.push({ x, y, width: w, height: PLATFORM_H, type: 'solid' });
         }
-        return { index, platforms };
+        return { index, platforms, blocks };
     }
 
-    // Normal chunk: generate platforms ensuring reachability
+    // Normal chunk
     const platCount = 4 + Math.floor(rng() * 4 * (0.7 + difficulty * 0.3));
     const minW = MIN_PLATFORM_W - difficulty * 40;
     const maxW = MAX_PLATFORM_W - difficulty * 60;
 
-    // Start from left edge of chunk, build rightward
     let lastX = startX;
     let lastY = GROUND_Y;
 
-    // If there's a previous chunk, connect from its last floating platform
     if (index > 0 && terrain.chunks.has(index - 1)) {
         const prevChunk = terrain.chunks.get(index - 1);
         const prevFloating = prevChunk.platforms.filter(p => p.type !== 'ground');
@@ -114,34 +106,75 @@ function generateChunk(index) {
         const gapX = 60 + rng() * (MAX_GAP_X - 60) * (0.5 + difficulty * 0.5);
 
         let x = lastX + gapX;
-        if (x + w > startX + CHUNK_WIDTH - 50) break; // don't overflow chunk
+        if (x + w > startX + CHUNK_WIDTH - 50) break;
 
-        // Vertical placement: reachable from last platform
-        const minY = Math.max(80, lastY - MAX_REACH_Y);
-        const maxY = Math.min(GROUND_Y - 60, lastY + 60);
+        const minPlatY = Math.max(80, lastY - MAX_REACH_Y);
+        const maxPlatY = Math.min(GROUND_Y - 60, lastY + 60);
         let y;
-        if (minY >= maxY) {
+        if (minPlatY >= maxPlatY) {
             y = GROUND_Y - 100 - rng() * 200;
         } else {
-            y = minY + rng() * (maxY - minY);
+            y = minPlatY + rng() * (maxPlatY - minPlatY);
         }
-
-        // Ensure not stacking too close to ground
         y = Math.min(y, GROUND_Y - 60);
         y = Math.max(y, 80);
 
-        platforms.push({
+        // Assign special platform types based on difficulty
+        let type = 'solid';
+        if (index >= 5) {
+            const typeRoll = rng();
+            if (index >= 15 && typeRoll < 0.08) {
+                type = 'moving';
+            } else if (index >= 15 && typeRoll < 0.16) {
+                type = 'bounce';
+            } else if (typeRoll < 0.12 + difficulty * 0.05) {
+                type = 'crumbling';
+            }
+        }
+
+        const plat = {
             x, y,
             width: Math.round(w),
             height: PLATFORM_H,
-            type: 'solid',
-        });
+            type,
+        };
+
+        // Add type-specific data
+        if (type === 'crumbling') {
+            plat.crumbleState = 'idle'; // idle | shaking | broken
+            plat.crumbleTimer = 0;
+            plat.respawnTimer = 0;
+        } else if (type === 'moving') {
+            plat.originX = x;
+            plat.originY = y;
+            plat.moveAxis = rng() < 0.6 ? 'h' : 'v';
+            plat.moveRange = 60 + rng() * 60;
+            plat.moveSpeed = 1.5 + rng() * 1.5;
+            plat.movePhase = rng() * Math.PI * 2;
+            plat.prevX = x;
+            plat.prevY = y;
+        }
+
+        platforms.push(plat);
+
+        // Destructible block above solid platforms (30% chance)
+        if (type === 'solid' && rng() < 0.3 && y > 120) {
+            const blockX = x + Math.round(w) / 2 - BLOCK_SIZE / 2;
+            const blockY = y - 40 - rng() * 20;
+            blocks.push({
+                x: blockX, y: blockY,
+                width: BLOCK_SIZE, height: BLOCK_SIZE,
+                type: 'destructible',
+                broken: false,
+                worldY: blockY, // for drop rarity calculation
+            });
+        }
 
         lastX = x;
         lastY = y;
     }
 
-    return { index, platforms };
+    return { index, platforms, blocks };
 }
 
 export function getVisiblePlatforms(cameraX) {
@@ -151,6 +184,21 @@ export function getVisiblePlatforms(cameraX) {
     for (let i = currentChunk - 1; i <= currentChunk + 1; i++) {
         if (terrain.chunks.has(i)) {
             result.push(...terrain.chunks.get(i).platforms);
+        }
+    }
+    return result;
+}
+
+export function getVisibleBlocks(cameraX) {
+    if (!terrain) return [];
+    const currentChunk = Math.floor(cameraX / CHUNK_WIDTH);
+    const result = [];
+    for (let i = currentChunk - 1; i <= currentChunk + 1; i++) {
+        if (terrain.chunks.has(i)) {
+            const chunk = terrain.chunks.get(i);
+            if (chunk.blocks) {
+                result.push(...chunk.blocks.filter(b => !b.broken));
+            }
         }
     }
     return result;

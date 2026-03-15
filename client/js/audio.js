@@ -74,6 +74,46 @@ export function playPickup() {
     setTimeout(() => playTone(800, 0.08, 'sine', 0.1), 60);
 }
 
+export function playPowerUp() {
+    playTone(600, 0.08, 'sine', 0.1);
+    setTimeout(() => playTone(900, 0.1, 'sine', 0.1), 80);
+}
+
+export function playShieldHit() {
+    playTone(1200, 0.08, 'triangle', 0.1);
+    playNoise(0.05, 0.06);
+}
+
+export function playBlockBreak() {
+    playTone(200, 0.1, 'square', 0.1);
+    playNoise(0.1, 0.08);
+}
+
+export function playBounce() {
+    const ctx = getCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+}
+
+export function playCrumble() {
+    playTone(80, 0.3, 'sawtooth', 0.06);
+}
+
+export function playCheckpoint() {
+    playTone(400, 0.1, 'sine', 0.08);
+    setTimeout(() => playTone(600, 0.1, 'sine', 0.08), 100);
+    setTimeout(() => playTone(800, 0.12, 'sine', 0.08), 200);
+}
+
 export function playPlayerDeath() {
     playNoise(0.3, 0.2);
     playTone(200, 0.3, 'sawtooth', 0.15);

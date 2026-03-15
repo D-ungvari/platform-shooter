@@ -53,17 +53,28 @@ export function triggerMuzzleFlash() {
     muzzleFlash = 0.05;
 }
 
-export function renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, mode, camera, platforms) {
-    gameTime += dt || 1 / 60;
+export function renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, mode, camera, platforms, blocks, zoneData, extGameTime) {
+    gameTime = extGameTime || (gameTime + (dt || 1 / 60));
     const isAdventure = mode === GAME_MODE.ADVENTURE;
     const activePlatforms = (isAdventure && platforms) ? platforms : PLATFORMS;
+    const activeBlocks = blocks || [];
     const cam = camera || { x: 0, y: 0 };
 
-    // Background — darkens/reddens with time
-    const timeRatio = survivalTime !== undefined ? Math.min(survivalTime / 180, 1) : 0;
-    const bgR = 10 + Math.floor(timeRatio * 20);
-    const bgG = 10 - Math.floor(timeRatio * 6);
-    const bgB = 30 - Math.floor(timeRatio * 12);
+    // Background — zone-aware colors
+    let bgR, bgG, bgB;
+    if (isAdventure && zoneData && zoneData.zone) {
+        const z = zoneData.zone;
+        const nz = zoneData.nextZone;
+        const b = zoneData.blend || 0;
+        bgR = nz ? Math.round(z.bg[0] + (nz.bg[0] - z.bg[0]) * b) : z.bg[0];
+        bgG = nz ? Math.round(z.bg[1] + (nz.bg[1] - z.bg[1]) * b) : z.bg[1];
+        bgB = nz ? Math.round(z.bg[2] + (nz.bg[2] - z.bg[2]) * b) : z.bg[2];
+    } else {
+        const timeRatio = survivalTime !== undefined ? Math.min(survivalTime / 180, 1) : 0;
+        bgR = 10 + Math.floor(timeRatio * 20);
+        bgG = 10 - Math.floor(timeRatio * 6);
+        bgB = 30 - Math.floor(timeRatio * 12);
+    }
     ctx.fillStyle = `rgb(${bgR}, ${Math.max(0, bgG)}, ${Math.max(4, bgB)})`;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -122,18 +133,93 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
             grd.addColorStop(1, '#334433');
             ctx.fillStyle = grd;
             ctx.fillRect(p.x, p.y, p.width, p.height);
-            // Grass edge
             ctx.fillStyle = '#66884466';
             ctx.fillRect(p.x, p.y, p.width, 3);
+        } else if (p.type === 'crumbling') {
+            if (p.crumbleState === 'broken') {
+                // Ghost outline while respawning
+                if (p.respawnTimer < 1) {
+                    ctx.globalAlpha = 0.15;
+                    ctx.fillStyle = '#665555';
+                    roundRect(p.x, p.y, p.width, p.height, 4);
+                    ctx.globalAlpha = 1.0;
+                }
+            } else {
+                // Shaking offset
+                const sx = p.crumbleState === 'shaking' ? (Math.random() - 0.5) * 3 : 0;
+                const sy = p.crumbleState === 'shaking' ? (Math.random() - 0.5) * 2 : 0;
+                const alpha = p.crumbleState === 'shaking' ? 0.5 + p.crumbleTimer * 0.5 : 1.0;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#776655';
+                roundRect(p.x + sx, p.y + sy, p.width, p.height, 4);
+                // Crack lines
+                ctx.strokeStyle = '#554433';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(p.x + sx + p.width * 0.3, p.y + sy);
+                ctx.lineTo(p.x + sx + p.width * 0.5, p.y + sy + p.height);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(p.x + sx + p.width * 0.7, p.y + sy + 2);
+                ctx.lineTo(p.x + sx + p.width * 0.6, p.y + sy + p.height - 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
+        } else if (p.type === 'bounce') {
+            ctx.fillStyle = '#44CC44';
+            roundRect(p.x, p.y, p.width, p.height, 4);
+            ctx.fillStyle = '#66FF66';
+            ctx.fillRect(p.x + 4, p.y, p.width - 8, 2);
+            // Up arrows
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('^', p.x + p.width / 2, p.y + p.height - 3);
+            ctx.textAlign = 'left';
+        } else if (p.type === 'moving') {
+            ctx.fillStyle = '#6666AA';
+            roundRect(p.x, p.y, p.width, p.height, 4);
+            ctx.fillStyle = '#8888CC';
+            ctx.fillRect(p.x + 4, p.y, p.width - 8, 2);
+            // Direction arrows
+            ctx.fillStyle = '#AAAADD';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            const arrow = p.moveAxis === 'h' ? '<>' : 'v^';
+            ctx.fillText(arrow, p.x + p.width / 2, p.y + p.height - 3);
+            ctx.textAlign = 'left';
         } else {
-            // Floating platforms with rounded look
-            ctx.fillStyle = '#555566';
+            // Solid floating platforms
+            const platColor = (isAdventure && zoneData && zoneData.zone) ? zoneData.zone.plat : '#555566';
+            ctx.fillStyle = platColor;
             roundRect(p.x, p.y, p.width, p.height, 4);
             ctx.fillStyle = '#777788';
             ctx.fillRect(p.x + 4, p.y, p.width - 8, 2);
             ctx.fillStyle = '#333344';
             ctx.fillRect(p.x + 4, p.y + p.height - 2, p.width - 8, 2);
         }
+    }
+
+    // Destructible blocks
+    for (const block of activeBlocks) {
+        if (block.broken) continue;
+        const pulse = 0.7 + Math.sin(gameTime * 4) * 0.3;
+        // Glow
+        ctx.globalAlpha = 0.2 * pulse;
+        ctx.fillStyle = '#FFDD44';
+        roundRect(block.x - 3, block.y - 3, block.width + 6, block.height + 6, 6);
+        // Block
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = '#DDAA22';
+        roundRect(block.x, block.y, block.width, block.height, 4);
+        ctx.fillStyle = '#FFDD44';
+        roundRect(block.x + 2, block.y + 2, block.width - 4, block.height - 4, 3);
+        // ? symbol
+        ctx.fillStyle = '#884400';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('?', block.x + block.width / 2, block.y + block.height - 5);
+        ctx.textAlign = 'left';
     }
 
     // Enemies
@@ -570,6 +656,48 @@ function drawPlayer(player, isAdventure, cam) {
     ctx.fill();
 
     ctx.globalAlpha = 1.0;
+
+    // Power-up visual effects
+    if (player.activePowerUps) {
+        // Speed trail
+        if (player.activePowerUps.speed > 0 && Math.abs(player.vx) > 10) {
+            const dir = player.facingRight ? -1 : 1;
+            for (let t = 1; t <= 3; t++) {
+                ctx.globalAlpha = 0.15 / t;
+                ctx.fillStyle = '#FFFF44';
+                ctx.fillRect(cx + dir * t * 10 - 4, cy - 10, 8, 20);
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        // Shield bubble
+        if (player.shieldHits > 0) {
+            ctx.globalAlpha = 0.2 + Math.sin(gameTime * 3) * 0.1;
+            ctx.strokeStyle = '#88BBFF';
+            ctx.lineWidth = 2;
+            const r = Math.max(player.width, player.height) * 0.8;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+            // Shield hit dots
+            for (let h = 0; h < player.shieldHits; h++) {
+                ctx.fillStyle = '#88BBFF';
+                ctx.beginPath();
+                ctx.arc(cx - 8 + h * 8, cy + r + 4, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Giant tint
+        if (player.activePowerUps.giant > 0) {
+            ctx.globalAlpha = 0.15;
+            ctx.fillStyle = '#FF8844';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.globalAlpha = 1.0;
+        }
+    }
+
     ctx.restore();
 }
 
