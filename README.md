@@ -2,13 +2,13 @@
 
 Arcade platform shooter with combo scoring, weapon/health pickups, and a leaderboard.
 
-![Gameplay](gameplay.gif)
-
-> **Note:** `gameplay.gif` is a placeholder — record and add a GIF manually.
-
 **[Play Now](https://d-ungvari.github.io/platform-shooter/)**
 
-> Requires GitHub Pages to be enabled: repo Settings > Pages > Source: **GitHub Actions**
+## Screenshots
+
+Gameplay captures coming soon.
+
+<!-- TODO: record gameplay.gif and embed above this line -->
 
 ## Controls
 
@@ -21,16 +21,48 @@ Arcade platform shooter with combo scoring, weapon/health pickups, and a leaderb
 
 ## Features
 
-- **3 Enemy types** — Runner, Flyer, Tank with distinct behaviors
+- **3 enemy types** — Runner, Flyer, Tank with distinct behaviors
 - **Combo scoring** — chain kills for score multipliers
-- **Weapon and health pickups** — dropped by enemies
+- **Weapon and health pickups** dropped by enemies
 - **Parallax background** with procedural stars and moon
-- **Leaderboard** via Express + PostgreSQL backend (client works without it)
-- **Procedural audio** — Web Audio API, no audio files
+- **Procedural audio** — Web Audio API, no audio files shipped
+- **Optional leaderboard** — Express + PostgreSQL backend; client runs fully offline without it
 
-## Tech
+## Architecture
 
-- Vanilla JavaScript (ES6 modules) — zero dependencies, no build step
-- Canvas 2D rendering with platform physics
-- 15 client modules: renderer, physics, spawner, enemies, effects, audio, UI
-- Express.js + PostgreSQL backend for score persistence (separate from client deploy)
+**Client** (`client/`) — vanilla JavaScript ES6 modules, zero dependencies, no build step.
+Modules: `renderer`, `physics`, `spawner`, `enemy`, `bullet`, `player`, `terrain`, `camera`,
+`effects`, `audio`, `input`, `ui`, `game`, `constants`, `api`, `main`.
+
+**Backend** (`server/`) — Express.js + PostgreSQL for score persistence. Decoupled from the
+client deploy; opt-in via the in-game leaderboard. Routes in `server/routes/scores.js`,
+connection pool in `server/db.js`.
+
+**Audio** is generated at runtime with the Web Audio API — no `.wav`/`.mp3` assets in the repo.
+
+## Run Locally
+
+**Client only** (no leaderboard):
+```bash
+cd client
+npx serve .
+```
+
+**With leaderboard backend** (optional):
+```bash
+cd server
+cp .env.example .env   # edit DATABASE_URL to point at a running Postgres
+npm install
+npm start
+```
+The client reads the API base from `client/js/api.js` (currently hardcoded to
+`http://localhost:3001` — see Known Issues).
+
+## Deploy
+
+Client is deployed to GitHub Pages via `.github/workflows/deploy.yml`.
+
+## Known Issues
+
+- `API_BASE` in `client/js/api.js` is hardcoded to `http://localhost:3001`. The deployed
+  client cannot reach a remote leaderboard until this is configured (env-based or build-time).
