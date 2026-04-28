@@ -1,5 +1,5 @@
 import {
-    CANVAS_WIDTH, CANVAS_HEIGHT, PLATFORMS, TILE,
+    CANVAS_WIDTH, CANVAS_HEIGHT, TILE,
     COLOR_SKY, COLOR_CLOUD, COLOR_CLOUD_SHADOW,
     COLOR_HILL, COLOR_HILL_DARK, COLOR_BUSH, COLOR_BUSH_DARK,
     COLOR_GRASS, COLOR_GRASS_DARK, COLOR_DIRT, COLOR_DIRT_DARK, COLOR_DIRT_SPECK,
@@ -8,7 +8,7 @@ import {
     COLOR_PIPE, COLOR_PIPE_LIGHT, COLOR_PIPE_DARK,
     COLOR_FLAG, COLOR_FLAG_POLE, COLOR_FLAG_BALL, COLOR_FLAG_CLOTH,
     COLOR_CASTLE, COLOR_CASTLE_DARK, COLOR_COIN, COLOR_COIN_LIGHT, COLOR_COIN_DARK,
-    COLOR_PLAYER, COLOR_ENEMY, COLOR_BULLET, COLOR_FLYER, COLOR_TANK, COLOR_BACKGROUND,
+    COLOR_PLAYER, COLOR_ENEMY, COLOR_BULLET, COLOR_FLYER, COLOR_TANK,
     GAME_MODE, COIN_VALUE
 } from './constants.js';
 import { getMouse, getWorldMouse } from './input.js';
@@ -52,36 +52,6 @@ for (let i = 0; i < 40; i++) {
 }
 
 // Legacy adventure-mode bg
-const bgStars = [];
-for (let i = 0; i < 80; i++) {
-    bgStars.push({
-        x: Math.random() * CANVAS_WIDTH,
-        y: Math.random() * CANVAS_HEIGHT * 0.75,
-        size: 0.5 + Math.random() * 2,
-        speed: 5 + Math.random() * 15,
-        brightness: 0.15 + Math.random() * 0.5,
-    });
-}
-
-function generateMountains(count, baseY, maxH, color, speed) {
-    const layer = [];
-    let x = -50;
-    for (let i = 0; i < count; i++) {
-        const w = 80 + Math.random() * 160;
-        const h = 30 + Math.random() * maxH;
-        layer.push({ x, w, h, baseY, color, speed });
-        x += w * 0.6 + Math.random() * 40;
-    }
-    return layer;
-}
-const farMountains = generateMountains(12, CANVAS_HEIGHT * 0.78, 100, null, 0.03);
-const nearMountains = generateMountains(10, CANVAS_HEIGHT * 0.82, 80, null, 0.06);
-const farTotalWidth = farMountains.length > 0 ? farMountains[farMountains.length - 1].x + farMountains[farMountains.length - 1].w + 50 : CANVAS_WIDTH;
-const nearTotalWidth = nearMountains.length > 0 ? nearMountains[nearMountains.length - 1].x + nearMountains[nearMountains.length - 1].w + 50 : CANVAS_WIDTH;
-
-const moonX = CANVAS_WIDTH * 0.8;
-const moonY = 70;
-
 export function initRenderer(context) {
     ctx = context;
     ctx.imageSmoothingEnabled = false;
@@ -93,35 +63,16 @@ export function triggerMuzzleFlash() {
 
 export function renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, mode, camera, platforms, blocks, zoneData, extGameTime, storyData) {
     gameTime = extGameTime || (gameTime + (dt || 1 / 60));
-    const isAdventure = mode === GAME_MODE.ADVENTURE;
-    const isStory = mode === GAME_MODE.STORY;
-    const useMarioBg = isStory || mode === GAME_MODE.ARENA;
-    const activePlatforms = ((isAdventure || isStory) && platforms) ? platforms : PLATFORMS;
-    const activeBlocks = blocks || [];
     const cam = camera || { x: 0, y: 0 };
+    const theme = (storyData && storyData.theme) ? storyData.theme : 'overworld';
 
-    if (useMarioBg) {
-        drawMarioBackground(cam, isStory);
-    } else {
-        drawAdventureBackground(cam, zoneData, survivalTime);
-    }
+    drawMarioBackground(cam, true, theme);
 
-    // === CAMERA TRANSFORM ===
     ctx.save();
-    if (isAdventure || isStory) {
-        ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
-    }
+    ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
 
-    if (isStory && storyData) {
-        // Story mode: draw decorative tiles + special tiles + flag + castle
+    if (storyData) {
         drawStoryWorld(storyData, cam);
-    } else {
-        // Arena/Adventure: legacy platform draw
-        drawLegacyPlatforms(activePlatforms, isAdventure, zoneData);
-        for (const block of activeBlocks) {
-            if (block.broken) continue;
-            drawDestructibleBlock(block);
-        }
     }
 
     // Enemies
@@ -129,38 +80,13 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
         drawEnemy(e);
     }
 
-    // Player
-    drawPlayer(player, isAdventure || isStory, cam);
+    drawPlayer(player, true, cam);
 
-    // Bullets — fireball style in story
     for (const b of bullets) {
         drawFireball(b);
     }
 
-    // Muzzle flash (suppressed in story for cleaner Mario feel)
-    if (muzzleFlash > 0 && !isStory) {
-        muzzleFlash -= dt || 1 / 60;
-        const mouse = (isAdventure || isStory) ? getWorldMouse(cam) : getMouse();
-        const cx = player.x + player.width / 2;
-        const cy = player.y + player.height / 2;
-        const dx = mouse.x - cx;
-        const dy = mouse.y - cy;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-            const fx = cx + (dx / len) * 24;
-            const fy = cy + (dy / len) * 24;
-            ctx.globalAlpha = 0.8;
-            ctx.fillStyle = '#FFFFFF';
-            ctx.beginPath();
-            ctx.arc(fx, fy, 8, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = COLOR_BULLET;
-            ctx.beginPath();
-            ctx.arc(fx, fy, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 1.0;
-        }
-    } else if (muzzleFlash > 0) {
+    if (muzzleFlash > 0) {
         muzzleFlash -= dt || 1 / 60;
     }
 
@@ -200,29 +126,71 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
         }
     }
 
-    if (isStory && storyData) {
-        drawStoryHUD(storyData, score, killCount);
-    } else {
-        drawHUD(player, score, killCount, survivalTime, enemies.length, isAdventure);
+    if (storyData) {
+        drawStoryHUD(storyData, score, killCount, player);
     }
 }
 
 // === MARIO BACKGROUND ===
-function drawMarioBackground(cam, isStory) {
-    // Sky gradient
+function drawMarioBackground(cam, isStory, theme = 'overworld') {
+    const camX = isStory ? cam.x : 0;
+    if (theme === 'underground') {
+        // Dark cave background
+        const grd = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        grd.addColorStop(0, '#000020');
+        grd.addColorStop(1, '#080010');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Distant rock silhouettes
+        ctx.fillStyle = '#101030';
+        for (let i = 0; i < 8; i++) {
+            const rx = (i * 200 - (camX * 0.2) % 200 + CANVAS_WIDTH) % CANVAS_WIDTH;
+            ctx.beginPath();
+            ctx.moveTo(rx, CANVAS_HEIGHT);
+            ctx.lineTo(rx + 100, 200 + (i % 3) * 50);
+            ctx.lineTo(rx + 200, CANVAS_HEIGHT);
+            ctx.closePath();
+            ctx.fill();
+        }
+        return;
+    }
+    if (theme === 'castle') {
+        const grd = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        grd.addColorStop(0, '#100008');
+        grd.addColorStop(0.5, '#380808');
+        grd.addColorStop(1, '#180000');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Brick wall pattern
+        ctx.fillStyle = '#1C0808';
+        for (let r = 0; r < 18; r++) {
+            const off = (r % 2) * 16;
+            for (let c = -1; c < 18; c++) {
+                ctx.fillRect(c * 32 + off - (camX * 0.1) % 32, r * 32, 30, 30);
+            }
+        }
+        return;
+    }
+    if (theme === 'sky') {
+        const grd = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+        grd.addColorStop(0, '#80C0FC');
+        grd.addColorStop(1, '#FFE890');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Lots of clouds, no hills
+        drawCloudsParallax(camX, 0.3);
+        drawCloudsParallax(camX, 0.6);
+        return;
+    }
+    // OVERWORLD default
     const grd = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     grd.addColorStop(0, '#5C94FC');
     grd.addColorStop(0.85, '#A0C4FC');
     grd.addColorStop(1, '#C0E0FC');
     ctx.fillStyle = grd;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // Far hills (parallax 0.3)
-    const camX = isStory ? cam.x : 0;
     drawHillsParallax(camX, 0.3, COLOR_HILL_DARK, 1.0);
     drawHillsParallax(camX, 0.5, COLOR_HILL, 0.8);
-
-    // Clouds (parallax 0.4)
     drawCloudsParallax(camX, 0.4);
 }
 
@@ -275,78 +243,9 @@ function drawCloudShape(x, y, s) {
     ctx.fill();
 }
 
-// === ADVENTURE LEGACY BG ===
-function drawAdventureBackground(cam, zoneData, survivalTime) {
-    let bgR, bgG, bgB;
-    const isAdventure = zoneData != null;
-    if (isAdventure && zoneData && zoneData.zone) {
-        const z = zoneData.zone;
-        const nz = zoneData.nextZone;
-        const b = zoneData.blend || 0;
-        bgR = nz ? Math.round(z.bg[0] + (nz.bg[0] - z.bg[0]) * b) : z.bg[0];
-        bgG = nz ? Math.round(z.bg[1] + (nz.bg[1] - z.bg[1]) * b) : z.bg[1];
-        bgB = nz ? Math.round(z.bg[2] + (nz.bg[2] - z.bg[2]) * b) : z.bg[2];
-    } else {
-        const timeRatio = survivalTime !== undefined ? Math.min(survivalTime / 180, 1) : 0;
-        bgR = 10 + Math.floor(timeRatio * 20);
-        bgG = 10 - Math.floor(timeRatio * 6);
-        bgB = 30 - Math.floor(timeRatio * 12);
-    }
-    ctx.fillStyle = `rgb(${bgR}, ${Math.max(0, bgG)}, ${Math.max(4, bgB)})`;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    const moonDrawX = isAdventure ? moonX - cam.x * 0.05 : moonX;
-    const moonDrawY = isAdventure ? moonY - cam.y * 0.05 : moonY;
-    ctx.fillStyle = '#DDDDBB';
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    ctx.arc(moonDrawX, moonDrawY, 30, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `rgb(${bgR}, ${Math.max(0, bgG)}, ${Math.max(4, bgB)})`;
-    ctx.beginPath();
-    ctx.arc(moonDrawX + 10, moonDrawY - 5, 26, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-
-    for (const star of bgStars) {
-        const twinkle = 0.5 + Math.sin(gameTime * star.speed + star.x) * 0.5;
-        ctx.globalAlpha = star.brightness * twinkle;
-        ctx.fillStyle = '#ffffff';
-        const sx = isAdventure ? ((star.x - cam.x * 0.02) % CANVAS_WIDTH + CANVAS_WIDTH) % CANVAS_WIDTH : star.x;
-        const sy = isAdventure ? star.y - cam.y * 0.02 : star.y;
-        ctx.beginPath();
-        ctx.arc(sx, sy, star.size * 0.5, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    ctx.globalAlpha = 1.0;
-
-    let farColor, nearColor;
-    if (isAdventure && zoneData && zoneData.zone) {
-        const z = zoneData.zone;
-        const nz = zoneData.nextZone;
-        const b = zoneData.blend || 0;
-        const mt = z.mt;
-        const mtn = nz ? nz.mt : mt;
-        farColor = `rgb(${Math.round(mt[0] + (mtn[0] - mt[0]) * b)}, ${Math.round(mt[1] + (mtn[1] - mt[1]) * b)}, ${Math.round(mt[2] + (mtn[2] - mt[2]) * b)})`;
-        nearColor = `rgb(${Math.round(mt[0] + 10 + (mtn[0] + 10 - mt[0] - 10) * b)}, ${Math.round(mt[1] + 8 + (mtn[1] + 8 - mt[1] - 8) * b)}, ${Math.round(mt[2] + 5 + (mtn[2] + 5 - mt[2] - 5) * b)})`;
-    } else {
-        const timeRatio = survivalTime !== undefined ? Math.min(survivalTime / 180, 1) : 0;
-        farColor = `rgb(${20 + Math.floor(timeRatio * 15)}, ${18 - Math.floor(timeRatio * 5)}, ${35 - Math.floor(timeRatio * 10)})`;
-        nearColor = `rgb(${30 + Math.floor(timeRatio * 15)}, ${26 - Math.floor(timeRatio * 8)}, ${40 - Math.floor(timeRatio * 12)})`;
-    }
-
-    if (isAdventure) {
-        drawMountainLayerTiled(farMountains, farColor, gameTime, cam.x * 0.1, farTotalWidth);
-        drawMountainLayerTiled(nearMountains, nearColor, gameTime, cam.x * 0.2, nearTotalWidth);
-    } else {
-        drawMountainLayer(farMountains, farColor, gameTime);
-        drawMountainLayer(nearMountains, nearColor, gameTime);
-    }
-}
-
 // === STORY WORLD DRAW ===
 function drawStoryWorld(storyData, cam) {
-    const { decoTiles, pipeTiles, qBlocks, coins, flag, castle } = storyData;
+    const { decoTiles, pipeTiles, qBlocks, coins, flag, castle, hazards, movingPlatforms, crumbleTilesList } = storyData;
     const camLeft = cam.x - 32;
     const camRight = cam.x + CANVAS_WIDTH + 32;
 
@@ -388,9 +287,153 @@ function drawStoryWorld(storyData, cam) {
         drawCoin(c.x, c.y);
     }
 
+    // Moving platforms
+    if (movingPlatforms) {
+        for (const m of movingPlatforms) {
+            drawMovingPlatform(m);
+        }
+    }
+
+    // Crumble tiles redrawn on top of decoTiles to show shake/broken state
+    if (crumbleTilesList) {
+        for (const c of crumbleTilesList) {
+            if (c.state === 'broken') continue; // hide
+            drawCrumbleTile(c);
+        }
+    }
+
+    // Hazards
+    if (hazards) {
+        for (const h of hazards) {
+            if (h.type === 'spike') drawSpike(h.x, h.y);
+            else if (h.type === 'lava') drawLava(h.x, h.y);
+            else if (h.type === 'firebar') drawFireBar(h);
+        }
+    }
+
     // Flag pole
     if (flag) {
         drawFlagpole(flag);
+    }
+}
+
+function drawMovingPlatform(m) {
+    const x = m.x, y = m.y, w = m.width, h = m.height;
+    // Cloud-style floating platform (sky theme) or stone (default)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#E8F0FF';
+    ctx.fillRect(x, y + h - 4, w, 4);
+    ctx.fillStyle = '#C8D8F0';
+    ctx.fillRect(x, y, 4, h);
+    ctx.fillRect(x + w - 4, y, 4, h);
+    // Bumps
+    ctx.fillStyle = '#FFFFFF';
+    for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(x + 16 + i * 32, y + 4, 8, Math.PI, 0);
+        ctx.closePath();
+        ctx.fill();
+    }
+    // Subtle direction arrow
+    ctx.fillStyle = 'rgba(0,80,200,0.5)';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.moveAxis === 'h' ? '<>' : 'v^', x + w / 2, y + h - 4);
+    ctx.textAlign = 'left';
+}
+
+function drawCrumbleTile(c) {
+    const shake = c.state === 'shaking' ? (Math.random() - 0.5) * 3 : 0;
+    const x = c.x + shake, y = c.y + shake;
+    ctx.fillStyle = '#A8784C';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = '#7C4828';
+    ctx.fillRect(x, y, TILE, 2);
+    ctx.fillRect(x, y, 2, TILE);
+    ctx.fillStyle = '#5C2818';
+    ctx.fillRect(x, y + TILE - 2, TILE, 2);
+    ctx.fillRect(x + TILE - 2, y, 2, TILE);
+    // Cracks
+    ctx.strokeStyle = '#3C1808';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + 4);
+    ctx.lineTo(x + 12, y + 14);
+    ctx.lineTo(x + 8, y + 24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + 22, y + 8);
+    ctx.lineTo(x + 18, y + 18);
+    ctx.lineTo(x + 24, y + 26);
+    ctx.stroke();
+}
+
+function drawSpike(x, y) {
+    ctx.fillStyle = '#888888';
+    for (let i = 0; i < 4; i++) {
+        const sx = x + i * 8;
+        ctx.beginPath();
+        ctx.moveTo(sx, y + TILE);
+        ctx.lineTo(sx + 4, y + 4);
+        ctx.lineTo(sx + 8, y + TILE);
+        ctx.closePath();
+        ctx.fill();
+    }
+    // Highlights
+    ctx.fillStyle = '#CCCCCC';
+    for (let i = 0; i < 4; i++) {
+        const sx = x + i * 8;
+        ctx.fillRect(sx + 3, y + 8, 1, 16);
+    }
+    // Base
+    ctx.fillStyle = '#444444';
+    ctx.fillRect(x, y + TILE - 2, TILE, 2);
+}
+
+function drawLava(x, y) {
+    const wave = Math.sin(gameTime * 4 + x * 0.05) * 2;
+    // Glow
+    ctx.fillStyle = 'rgba(248, 80, 0, 0.4)';
+    ctx.fillRect(x - 2, y - 4, TILE + 4, TILE + 4);
+    // Lava body
+    const grd = ctx.createLinearGradient(0, y, 0, y + TILE);
+    grd.addColorStop(0, '#FFE830');
+    grd.addColorStop(0.5, '#FF6020');
+    grd.addColorStop(1, '#A02000');
+    ctx.fillStyle = grd;
+    ctx.fillRect(x, y + 4 + wave, TILE, TILE - 4);
+    // Surface bubbles
+    ctx.fillStyle = '#FFE890';
+    ctx.beginPath();
+    ctx.arc(x + 8, y + 6 + wave, 2, 0, Math.PI * 2);
+    ctx.arc(x + 22, y + 8 + wave, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawFireBar(h) {
+    const angle = gameTime * h.speed + h.phase;
+    // Pivot
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Fireball chain
+    for (let i = 1; i <= h.length; i++) {
+        const fx = h.x + Math.cos(angle) * i * 16;
+        const fy = h.y + Math.sin(angle) * i * 16;
+        ctx.fillStyle = 'rgba(255, 96, 32, 0.4)';
+        ctx.beginPath();
+        ctx.arc(fx, fy, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FF8000';
+        ctx.beginPath();
+        ctx.arc(fx, fy, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FFE830';
+        ctx.beginPath();
+        ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
@@ -634,101 +677,6 @@ function drawCastle(x, y) {
     }
 }
 
-// === LEGACY PLATFORM DRAW (arena/adventure) ===
-function drawLegacyPlatforms(activePlatforms, isAdventure, zoneData) {
-    for (let i = 0; i < activePlatforms.length; i++) {
-        const p = activePlatforms[i];
-        const isGround = p.type === 'ground' || (p.width >= 500 && !p.type);
-        if (isGround) {
-            // Mario-style ground for arena too
-            ctx.fillStyle = COLOR_GRASS;
-            ctx.fillRect(p.x, p.y, p.width, 6);
-            ctx.fillStyle = COLOR_GRASS_DARK;
-            ctx.fillRect(p.x, p.y + 6, p.width, 2);
-            ctx.fillStyle = COLOR_DIRT;
-            ctx.fillRect(p.x, p.y + 8, p.width, p.height - 8);
-            ctx.fillStyle = COLOR_DIRT_DARK;
-            for (let sx = p.x + 8; sx < p.x + p.width; sx += 32) {
-                ctx.fillRect(sx, p.y + 14, 3, 3);
-                ctx.fillRect(sx + 12, p.y + 22, 2, 2);
-            }
-        } else if (p.type === 'crumbling') {
-            if (p.crumbleState === 'broken') {
-                if (p.respawnTimer < 1) {
-                    ctx.globalAlpha = 0.15;
-                    ctx.fillStyle = '#665555';
-                    roundRect(p.x, p.y, p.width, p.height, 4);
-                    ctx.globalAlpha = 1.0;
-                }
-            } else {
-                const sx = p.crumbleState === 'shaking' ? (Math.random() - 0.5) * 3 : 0;
-                const sy = p.crumbleState === 'shaking' ? (Math.random() - 0.5) * 2 : 0;
-                const alpha = p.crumbleState === 'shaking' ? 0.5 + p.crumbleTimer * 0.5 : 1.0;
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = '#776655';
-                roundRect(p.x + sx, p.y + sy, p.width, p.height, 4);
-                ctx.strokeStyle = '#554433';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(p.x + sx + p.width * 0.3, p.y + sy);
-                ctx.lineTo(p.x + sx + p.width * 0.5, p.y + sy + p.height);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(p.x + sx + p.width * 0.7, p.y + sy + 2);
-                ctx.lineTo(p.x + sx + p.width * 0.6, p.y + sy + p.height - 2);
-                ctx.stroke();
-                ctx.globalAlpha = 1.0;
-            }
-        } else if (p.type === 'bounce') {
-            ctx.fillStyle = '#44CC44';
-            roundRect(p.x, p.y, p.width, p.height, 4);
-            ctx.fillStyle = '#66FF66';
-            ctx.fillRect(p.x + 4, p.y, p.width - 8, 2);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 10px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText('^', p.x + p.width / 2, p.y + p.height - 3);
-            ctx.textAlign = 'left';
-        } else if (p.type === 'moving') {
-            ctx.fillStyle = '#6666AA';
-            roundRect(p.x, p.y, p.width, p.height, 4);
-            ctx.fillStyle = '#8888CC';
-            ctx.fillRect(p.x + 4, p.y, p.width - 8, 2);
-            ctx.fillStyle = '#AAAADD';
-            ctx.font = '8px monospace';
-            ctx.textAlign = 'center';
-            const arrow = p.moveAxis === 'h' ? '<>' : 'v^';
-            ctx.fillText(arrow, p.x + p.width / 2, p.y + p.height - 3);
-            ctx.textAlign = 'left';
-        } else {
-            // Brick-style floating platform
-            ctx.fillStyle = COLOR_BRICK;
-            ctx.fillRect(p.x, p.y, p.width, p.height);
-            ctx.fillStyle = COLOR_BRICK_LIGHT;
-            ctx.fillRect(p.x, p.y, p.width, 2);
-            ctx.fillStyle = COLOR_BRICK_DARK;
-            ctx.fillRect(p.x, p.y + p.height - 2, p.width, 2);
-        }
-    }
-}
-
-function drawDestructibleBlock(block) {
-    const pulse = 0.7 + Math.sin(gameTime * 4) * 0.3;
-    ctx.globalAlpha = 0.2 * pulse;
-    ctx.fillStyle = '#FFDD44';
-    roundRect(block.x - 3, block.y - 3, block.width + 6, block.height + 6, 6);
-    ctx.globalAlpha = 1.0;
-    ctx.fillStyle = '#DDAA22';
-    roundRect(block.x, block.y, block.width, block.height, 4);
-    ctx.fillStyle = '#FFDD44';
-    roundRect(block.x + 2, block.y + 2, block.width - 4, block.height - 4, 3);
-    ctx.fillStyle = '#884400';
-    ctx.font = 'bold 16px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('?', block.x + block.width / 2, block.y + block.height - 5);
-    ctx.textAlign = 'left';
-}
-
 function drawFireball(b) {
     // Outer glow
     ctx.globalAlpha = 0.3;
@@ -765,40 +713,6 @@ function roundRect(x, y, w, h, r) {
     ctx.lineTo(x, y + r);
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.fill();
-}
-
-function drawMountainLayer(layer, color, t) {
-    ctx.fillStyle = color;
-    for (const m of layer) {
-        const sway = Math.sin(t * m.speed + m.x * 0.01) * 2;
-        ctx.beginPath();
-        ctx.moveTo(m.x, m.baseY);
-        ctx.lineTo(m.x + m.w * 0.3, m.baseY - m.h + sway);
-        ctx.lineTo(m.x + m.w * 0.5, m.baseY - m.h * 0.85 + sway);
-        ctx.lineTo(m.x + m.w * 0.7, m.baseY - m.h * 0.95 + sway);
-        ctx.lineTo(m.x + m.w, m.baseY);
-        ctx.fill();
-    }
-}
-
-function drawMountainLayerTiled(layer, color, t, parallaxOffset, totalWidth) {
-    ctx.fillStyle = color;
-    const offset = -(parallaxOffset % totalWidth);
-    for (let copy = -1; copy <= Math.ceil(CANVAS_WIDTH / totalWidth) + 1; copy++) {
-        const baseX = offset + copy * totalWidth;
-        for (const m of layer) {
-            const drawX = baseX + m.x;
-            if (drawX + m.w < -50 || drawX > CANVAS_WIDTH + 50) continue;
-            const sway = Math.sin(t * m.speed + m.x * 0.01) * 2;
-            ctx.beginPath();
-            ctx.moveTo(drawX, m.baseY);
-            ctx.lineTo(drawX + m.w * 0.3, m.baseY - m.h + sway);
-            ctx.lineTo(drawX + m.w * 0.5, m.baseY - m.h * 0.85 + sway);
-            ctx.lineTo(drawX + m.w * 0.7, m.baseY - m.h * 0.95 + sway);
-            ctx.lineTo(drawX + m.w, m.baseY);
-            ctx.fill();
-        }
-    }
 }
 
 // === ENEMY DRAWS ===
@@ -1296,80 +1210,8 @@ function drawMario(x, y, w, h, facing, airborne, moving, runFrame, aimAngle, cxw
     ctx.restore();
 }
 
-// === HUD ===
-function drawHUD(player, score, killCount, survivalTime, enemyCount, isAdventure) {
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '12px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('HP', 10, 8);
-
-    const barW = 200;
-    const barH = 16;
-    const barX = 10;
-    const barY = 12;
-    const healthRatio = Math.max(0, player.health / player.maxHealth);
-
-    ctx.fillStyle = '#222';
-    roundRect(barX, barY, barW, barH, 3);
-    const r = Math.floor(255 * (1 - healthRatio));
-    const g = Math.floor(200 * healthRatio);
-    ctx.fillStyle = `rgb(${r}, ${g}, 50)`;
-    if (healthRatio > 0) {
-        ctx.fillRect(barX + 1, barY + 1, (barW - 2) * healthRatio, barH - 2);
-    }
-    ctx.strokeStyle = '#555';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barW, barH);
-
-    if (!isAdventure) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '20px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText('Score: ' + score, CANVAS_WIDTH - 10, 26);
-    }
-
-    if (survivalTime !== undefined) {
-        const m = Math.floor(survivalTime / 60);
-        const s = Math.floor(survivalTime % 60);
-        const timeStr = m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `0:${s.toString().padStart(2, '0')}`;
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#aaaaaa';
-        ctx.font = '16px monospace';
-        ctx.fillText(timeStr, CANVAS_WIDTH / 2, 20);
-    }
-
-    if (killCount !== undefined) {
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#FF6666';
-        ctx.font = '14px monospace';
-        ctx.fillText('Kills: ' + killCount, CANVAS_WIDTH - 10, 44);
-    }
-
-    ctx.textAlign = 'left';
-
-    if (player.weapon !== 'normal' && player.weaponTimer > 0) {
-        const weaponLabel = player.weapon === 'shotgun' ? 'SHOTGUN' : 'FIRE';
-        const weaponColor = player.weapon === 'shotgun' ? '#FF8844' : '#44DDFF';
-        ctx.fillStyle = weaponColor;
-        ctx.font = 'bold 14px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(weaponLabel + ' ' + Math.ceil(player.weaponTimer) + 's', 10, 46);
-    }
-
-    if (enemyCount >= 8) {
-        const pulse = 0.4 + Math.sin(gameTime * 6) * 0.3;
-        ctx.globalAlpha = pulse;
-        ctx.fillStyle = '#FF3333';
-        ctx.font = 'bold 12px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('!! ' + enemyCount + ' ENEMIES !!', CANVAS_WIDTH / 2, 40);
-        ctx.globalAlpha = 1.0;
-        ctx.textAlign = 'left';
-    }
-}
-
 // === STORY HUD (Mario-style top bar) ===
-function drawStoryHUD(storyData, score, killCount) {
+function drawStoryHUD(storyData, score, killCount, player) {
     const { lives, coinCount, timeRemaining, levelName } = storyData;
     // Top bar background
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -1416,12 +1258,26 @@ function drawStoryHUD(storyData, score, killCount) {
     ctx.fillText('×' + lives, 96, 14);
     drawTinyMario(80, 6);
 
-    // HP bar (smaller, lower-left)
-    const hpBarW = 140;
-    const hpBarH = 10;
-    const hpBarX = 14;
-    const hpBarY = CANVAS_HEIGHT - 22;
-    // Note: player not passed here in storyData; HUD without player ref uses full bar
+    // HP bar lower-left
+    if (player) {
+        const hpBarW = 140;
+        const hpBarH = 10;
+        const hpBarX = 14;
+        const hpBarY = CANVAS_HEIGHT - 22;
+        const ratio = Math.max(0, player.health / player.maxHealth);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
+        const r = Math.floor(255 * (1 - ratio));
+        const g = Math.floor(200 * ratio);
+        ctx.fillStyle = `rgb(${r}, ${g}, 50)`;
+        if (ratio > 0) ctx.fillRect(hpBarX + 1, hpBarY + 1, (hpBarW - 2) * ratio, hpBarH - 2);
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(hpBarX, hpBarY, hpBarW, hpBarH);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText('HP', hpBarX, hpBarY - 2);
+    }
 }
 
 function drawHUDCoin(x, y) {

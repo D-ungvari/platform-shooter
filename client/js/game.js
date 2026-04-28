@@ -1,44 +1,58 @@
 import {
     CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER,
-    PLAYER_MAX_HEALTH, GAME_MODE, PLATFORMS, CRUMBLE_DELAY, CRUMBLE_RESPAWN,
+    PLAYER_MAX_HEALTH, GAME_MODE,
     TILE, STORY_LIVES, STORY_TIME_LIMIT, COIN_VALUE, STOMP_BOUNCE
 } from './constants.js';
-import { initInput, resetFrameInput, isKeyDown, jumpPressedThisFrame } from './input.js';
+import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
 import { createPlayer, updatePlayer, damagePlayer, giveWeapon, applyPowerUp, hasPowerUp } from './player.js';
 import { moveBullets } from './bullet.js';
 import { createEnemy, updateEnemies } from './enemy.js';
-import { resetSpawner, updateSpawner } from './spawner.js';
-import { collides, checkBlockCollisions } from './physics.js';
+import { collides } from './physics.js';
 import { initUI, showMenu, showGameOver, showPause, hidePause, showVictory, hideVictory } from './ui.js';
 import {
     updateEffects, renderWorldEffects, renderScreenEffects, resetEffects,
     spawnKillParticles, spawnScorePopup, triggerShake, getShakeOffset,
-    spawnHealthPickup, spawnPickup, getPickups, removePickup, showAnnouncement,
+    spawnPickup, getPickups, removePickup, showAnnouncement,
     spawnLandingDust, spawnCoinSparkle, spawnSquishParticles
 } from './effects.js';
 import {
     playEnemyDeath, playPlayerHit, playPickup, playPlayerDeath, playPowerUp,
-    playShieldHit, playBlockBreak, playBounce, playCrumble, playCheckpoint,
+    playShieldHit, playCrumble,
     playStomp, playCoin, playFlag, playCourseClear, playOneUp, playBumpBlock
 } from './audio.js';
-import { createCamera, updateCamera, getCamera, resetCamera } from './camera.js';
-import { createTerrain, updateTerrain, getVisiblePlatforms, getVisibleBlocks, resetTerrain } from './terrain.js';
-import { loadLevel, getCurrentLevel, resetLevel } from './level.js';
+import { createCamera, updateCamera, getCamera } from './camera.js';
+import { loadLevel } from './level.js';
 import { LEVEL_1 } from './levels/level1.js';
+import { LEVEL_2 } from './levels/level2.js';
+import { LEVEL_3 } from './levels/level3.js';
+import { LEVEL_4 } from './levels/level4.js';
+
+const LEVELS = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4];
+
+const SAVE_KEY = 'spb_progress_v1';
+function loadSave() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return { cleared: [], unlocked: 1 };
+        return JSON.parse(raw);
+    } catch (e) { return { cleared: [], unlocked: 1 }; }
+}
+function saveProgress(data) {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) {}
+}
+function markCleared(idx) {
+    const s = loadSave();
+    if (!s.cleared.includes(idx)) s.cleared.push(idx);
+    s.unlocked = Math.max(s.unlocked, idx + 2);
+    saveProgress(s);
+}
+export function getProgress() { return loadSave(); }
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', DYING: 'DYING', GAME_OVER: 'GAME_OVER', VICTORY: 'VICTORY' };
 const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
 
-const ZONES = [
-    { name: 'Twilight Plains', dist: 0, bg: [10, 10, 30], plat: '#555566', mt: [20, 18, 35] },
-    { name: 'Crimson Wastes', dist: 1000, bg: [30, 8, 15], plat: '#665544', mt: [35, 15, 20] },
-    { name: 'Frozen Depths', dist: 2000, bg: [8, 15, 35], plat: '#556677', mt: [15, 25, 40] },
-    { name: 'Toxic Swamp', dist: 3000, bg: [10, 25, 12], plat: '#556644', mt: [18, 35, 20] },
-    { name: 'The Void', dist: 4000, bg: [5, 3, 15], plat: '#444455', mt: [12, 8, 25] },
-];
-
-let currentMode = GAME_MODE.ARENA;
+const currentMode = GAME_MODE.STORY;
 
 let canvas, ctx;
 let state;
@@ -46,7 +60,6 @@ let player, enemies, bullets, score;
 let lastTime;
 let escapeHeld = false;
 let killCount = 0;
-let nextWaveAt = 10;
 let survivalTime = 0;
 let gameTime = 0;
 
@@ -54,34 +67,30 @@ let comboCount = 0;
 let comboTimer = 0;
 const COMBO_WINDOW = 1.5;
 
-let lastDiffTier = 0;
-const DIFF_THRESHOLDS = [30, 60, 90, 120, 180];
-
 let deathTimer = 0;
 let flashAlpha = 0;
 let hitPauseTimer = 0;
 let zoomPunch = 0;
 
-let maxPlayerX = 0;
-let lastCheckpoint = 0;
-let currentZone = 0;
-
 let cachedPlatforms = null;
-let cachedBlocks = null;
 
-// Story mode state
+// Story state
 let storyLives = STORY_LIVES;
 let storyTimeRemaining = STORY_TIME_LIMIT;
 let coinCount = 0;
 let storyLevel = null;
-let qBlocks = []; // ?-blocks (bumpable)
-let coins = []; // collectible coins
+let qBlocks = [];
+let coins = [];
 let decoTiles = [];
 let pipeTiles = [];
+let hazardTiles = [];
+let movingPlatforms = [];
+let crumbleTilesList = [];
 let levelFlag = null;
 let levelCastle = null;
+let currentLevelIndex = 0;
 let victoryTimer = 0;
-let victoryPhase = 'sliding'; // sliding | walking | done
+let victoryPhase = 'sliding';
 let victoryStateData = null;
 
 export function initGame() {
@@ -94,15 +103,10 @@ export function initGame() {
     initInput(canvas);
     initRenderer(ctx);
     initUI({
-        onStartArena: startArena,
-        onStartAdventure: startAdventure,
-        onStartStory: startStory,
-        onRestart: () => {
-            if (currentMode === GAME_MODE.STORY) startStory();
-            else if (currentMode === GAME_MODE.ADVENTURE) startAdventure();
-            else startArena();
-        },
+        onStartStoryAt: (idx) => startStory(idx),
+        onRestart: () => startStory(currentLevelIndex),
         onResume: resumePlaying,
+        onAdvance: advanceToNextLevel,
     });
 
     state = STATE.MENU;
@@ -111,32 +115,32 @@ export function initGame() {
     requestAnimationFrame(loop);
 }
 
-function startArena() {
-    currentMode = GAME_MODE.ARENA;
-    startPlaying();
-}
-
-function startAdventure() {
-    currentMode = GAME_MODE.ADVENTURE;
-    startPlaying();
-}
-
-function startStory() {
-    currentMode = GAME_MODE.STORY;
+function startStory(levelIndex = 0) {
     storyLives = STORY_LIVES;
     storyTimeRemaining = STORY_TIME_LIMIT;
     coinCount = 0;
     score = 0;
+    currentLevelIndex = Math.max(0, Math.min(LEVELS.length - 1, levelIndex));
     startPlaying();
+}
+
+export function startStoryAtLevel(idx) { startStory(idx); }
+
+export function advanceToNextLevel() {
+    if (victoryStateData && !victoryStateData.isLastLevel) {
+        currentLevelIndex = victoryStateData.nextLevelIndex;
+        storyLives = STORY_LIVES;
+        storyTimeRemaining = STORY_TIME_LIMIT;
+        coinCount = 0;
+        startPlaying();
+    }
 }
 
 function startPlaying() {
     player = createPlayer(currentMode);
     enemies = [];
     bullets = [];
-    if (currentMode !== GAME_MODE.STORY) score = 0;
     killCount = 0;
-    nextWaveAt = 10;
     comboCount = 0;
     comboTimer = 0;
     survivalTime = 0;
@@ -145,52 +149,29 @@ function startPlaying() {
     flashAlpha = 0;
     hitPauseTimer = 0;
     zoomPunch = 0;
-    lastDiffTier = 0;
-    maxPlayerX = 0;
-    lastCheckpoint = 0;
-    currentZone = 0;
     victoryTimer = 0;
     victoryPhase = 'sliding';
-    resetSpawner();
     resetEffects();
 
-    if (currentMode === GAME_MODE.STORY) {
-        storyLevel = loadLevel(LEVEL_1);
-        player.x = storyLevel.spawn.x;
-        player.y = storyLevel.spawn.y;
-        qBlocks = storyLevel.blocks;
-        coins = storyLevel.coins.map(c => ({ ...c }));
-        decoTiles = storyLevel.decoTiles;
-        pipeTiles = storyLevel.pipes;
-        levelFlag = storyLevel.flag;
-        levelCastle = storyLevel.castle;
-        // Spawn hand-placed enemies
-        for (const e of storyLevel.enemies) {
-            const en = createEnemy(e.tx * TILE, e.ty * TILE, e.type);
-            en.fromLevel = true;
-            enemies.push(en);
-        }
-        createCamera(player.x);
-        resetTerrain();
-    } else if (currentMode === GAME_MODE.ADVENTURE) {
-        createTerrain();
-        createCamera(player.x);
-        storyLevel = null;
-        qBlocks = [];
-        coins = [];
-        decoTiles = [];
-        pipeTiles = [];
-        levelFlag = null;
-    } else {
-        resetTerrain();
-        resetCamera();
-        storyLevel = null;
-        qBlocks = [];
-        coins = [];
-        decoTiles = [];
-        pipeTiles = [];
-        levelFlag = null;
+    const levelData = LEVELS[currentLevelIndex] || LEVEL_1;
+    storyLevel = loadLevel(levelData);
+    player.x = storyLevel.spawn.x;
+    player.y = storyLevel.spawn.y;
+    qBlocks = storyLevel.blocks;
+    coins = storyLevel.coins.map(c => ({ ...c }));
+    decoTiles = storyLevel.decoTiles;
+    pipeTiles = storyLevel.pipes;
+    hazardTiles = storyLevel.hazards || [];
+    movingPlatforms = (storyLevel.movingPlatforms || []).map(m => ({ ...m }));
+    crumbleTilesList = (storyLevel.crumbleTiles || []).map(c => ({ ...c }));
+    levelFlag = storyLevel.flag;
+    levelCastle = storyLevel.castle;
+    for (const e of storyLevel.enemies) {
+        const en = createEnemy(e.tx * TILE, e.ty * TILE, e.type);
+        en.fromLevel = true;
+        enemies.push(en);
     }
+    createCamera(player.x);
 
     state = STATE.PLAYING;
 }
@@ -202,7 +183,7 @@ function resumePlaying() {
 }
 
 function loop(timestamp) {
-    let dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+    const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
     lastTime = timestamp;
 
     if (state === STATE.PLAYING) {
@@ -214,19 +195,16 @@ function loop(timestamp) {
         if (!isKeyDown('escape')) escapeHeld = false;
 
         if (state === STATE.PLAYING) {
-            // Hit-pause: freeze logic but keep rendering
             if (hitPauseTimer > 0) {
                 hitPauseTimer -= dt;
                 render(0);
             } else {
                 survivalTime += dt;
                 gameTime += dt;
-                if (currentMode === GAME_MODE.STORY) {
-                    storyTimeRemaining -= dt;
-                    if (storyTimeRemaining <= 0) {
-                        storyTimeRemaining = 0;
-                        player.health = 0;
-                    }
+                storyTimeRemaining -= dt;
+                if (storyTimeRemaining <= 0) {
+                    storyTimeRemaining = 0;
+                    player.health = 0;
                 }
                 update(dt);
                 render(dt);
@@ -245,8 +223,7 @@ function loop(timestamp) {
         if (flashAlpha > 0) flashAlpha -= dt * 2;
         render(dt);
         if (deathTimer <= 0) {
-            if (currentMode === GAME_MODE.STORY && storyLives > 1) {
-                // Lose a life, restart level
+            if (storyLives > 1) {
                 storyLives--;
                 storyTimeRemaining = STORY_TIME_LIMIT;
                 showAnnouncement(`MARIO × ${storyLives}`);
@@ -254,12 +231,7 @@ function loop(timestamp) {
             } else {
                 state = STATE.GAME_OVER;
                 const timeStr = formatTime(survivalTime);
-                let displayScore = score;
-                if (currentMode === GAME_MODE.ADVENTURE) {
-                    displayScore = score + Math.floor(maxPlayerX / 100);
-                } else if (currentMode === GAME_MODE.STORY) {
-                    displayScore = score + coinCount * COIN_VALUE;
-                }
+                const displayScore = score + coinCount * COIN_VALUE;
                 showGameOver(displayScore, killCount, timeStr);
             }
         }
@@ -271,7 +243,6 @@ function loop(timestamp) {
     }
 
     if (zoomPunch > 0) zoomPunch -= dt * 4;
-
     resetFrameInput();
     requestAnimationFrame(loop);
 }
@@ -279,7 +250,6 @@ function loop(timestamp) {
 function updateVictory(dt) {
     victoryTimer += dt;
     if (victoryPhase === 'sliding') {
-        // Slide down pole
         if (levelFlag) {
             player.y += 200 * dt;
             if (player.y + player.height >= levelFlag.base) {
@@ -296,18 +266,30 @@ function updateVictory(dt) {
             victoryPhase = 'done';
             const timeBonus = Math.floor(storyTimeRemaining) * 50;
             const finalScore = score + coinCount * COIN_VALUE + timeBonus;
-            const stars = computeStars(storyTimeRemaining, coinCount, killCount);
-            victoryStateData = { score: finalScore, time: storyTimeRemaining, coins: coinCount, kills: killCount, bonus: timeBonus, stars };
+            const stars = computeStars(storyTimeRemaining, coinCount);
+            const isLastLevel = currentLevelIndex >= LEVELS.length - 1;
+            markCleared(currentLevelIndex);
+            victoryStateData = {
+                score: finalScore,
+                time: storyTimeRemaining,
+                coins: coinCount,
+                kills: killCount,
+                bonus: timeBonus,
+                stars,
+                levelName: storyLevel.name,
+                isLastLevel,
+                nextLevelIndex: currentLevelIndex + 1,
+            };
             showVictory(victoryStateData);
-            state = STATE.GAME_OVER; // freeze further updates; victory screen handles next
+            state = STATE.GAME_OVER;
         }
     }
 }
 
-function computeStars(timeLeft, c, k) {
+function computeStars(timeLeft, c) {
     let s = 1;
     if (timeLeft > 100) s++;
-    if (c >= 20) s++;
+    if (c >= 15) s++;
     return Math.min(3, s);
 }
 
@@ -318,82 +300,120 @@ function formatTime(seconds) {
 }
 
 function refreshPlatforms() {
-    if (currentMode === GAME_MODE.ADVENTURE) {
-        const camera = getCamera();
-        updateTerrain(camera.x);
-        cachedPlatforms = getVisiblePlatforms(camera.x);
-        cachedBlocks = getVisibleBlocks(camera.x);
-    } else if (currentMode === GAME_MODE.STORY && storyLevel) {
-        cachedPlatforms = storyLevel.platforms;
-        cachedBlocks = []; // qBlocks handled separately
-    } else {
-        cachedPlatforms = PLATFORMS;
-        cachedBlocks = [];
+    if (!storyLevel) {
+        cachedPlatforms = [];
+        return cachedPlatforms;
     }
+    const dynamic = [];
+    for (const m of movingPlatforms) dynamic.push(m);
+    cachedPlatforms = storyLevel.platforms.concat(dynamic);
     return cachedPlatforms;
 }
 
 function getActivePlatforms() {
-    return cachedPlatforms || PLATFORMS;
+    return cachedPlatforms || [];
 }
 
-function getActiveBlocks() {
-    return cachedBlocks || [];
+function updateMovingPlatforms() {
+    for (const m of movingPlatforms) {
+        m.prevX = m.x;
+        m.prevY = m.y;
+        if (m.moveAxis === 'h') {
+            m.x = m.originX + Math.sin(gameTime * m.moveSpeed + m.movePhase) * m.moveRange;
+        } else {
+            m.y = m.originY + Math.sin(gameTime * m.moveSpeed + m.movePhase) * m.moveRange;
+        }
+    }
 }
 
-function updateSpecialPlatforms(platforms, dt) {
-    for (const plat of platforms) {
-        if (plat.type === 'moving') {
-            plat.prevX = plat.x;
-            plat.prevY = plat.y;
-            if (plat.moveAxis === 'h') {
-                plat.x = plat.originX + Math.sin(gameTime * plat.moveSpeed + plat.movePhase) * plat.moveRange;
-            } else {
-                plat.y = plat.originY + Math.sin(gameTime * plat.moveSpeed + plat.movePhase) * plat.moveRange;
-            }
-        } else if (plat.type === 'crumbling') {
-            if (plat.crumbleState === 'shaking') {
-                plat.crumbleTimer -= dt;
-                if (plat.crumbleTimer <= 0) {
-                    plat.crumbleState = 'broken';
-                    plat.respawnTimer = CRUMBLE_RESPAWN;
-                    spawnKillParticles(plat.x + plat.width / 2, plat.y + plat.height / 2, '#887766');
-                    playCrumble();
+function updateCrumbleTiles(dt) {
+    for (const c of crumbleTilesList) {
+        if (c.state === 'shaking') {
+            c.timer -= dt;
+            if (c.timer <= 0) {
+                c.state = 'broken';
+                c.respawn = 4.0;
+                spawnKillParticles(c.x + 16, c.y + 16, '#888');
+                playCrumble();
+                if (storyLevel) {
+                    storyLevel.platforms = storyLevel.platforms.filter(p =>
+                        !(p.x === c.x && p.y === c.y && p.tileType === 'x')
+                    );
                 }
-            } else if (plat.crumbleState === 'broken') {
-                plat.respawnTimer -= dt;
-                if (plat.respawnTimer <= 0) {
-                    plat.crumbleState = 'idle';
+            }
+        } else if (c.state === 'broken') {
+            c.respawn -= dt;
+            if (c.respawn <= 0) {
+                c.state = 'idle';
+                if (storyLevel) {
+                    storyLevel.platforms.push({
+                        x: c.x, y: c.y, width: 32, height: 32, type: 'solid', tileType: 'x',
+                    });
                 }
             }
         }
     }
 }
 
-function checkCrumbleTrigger(player, platforms) {
+function checkCrumbleStand(player) {
     if (!player.grounded) return;
-    for (const plat of platforms) {
-        if (plat.type !== 'crumbling' || plat.crumbleState !== 'idle') continue;
-        if (player.y + player.height >= plat.y - 2 && player.y + player.height <= plat.y + 4 &&
-            player.x + player.width > plat.x && player.x < plat.x + plat.width) {
-            plat.crumbleState = 'shaking';
-            plat.crumbleTimer = CRUMBLE_DELAY;
+    for (const c of crumbleTilesList) {
+        if (c.state !== 'idle') continue;
+        if (player.y + player.height >= c.y - 2 && player.y + player.height <= c.y + 4 &&
+            player.x + player.width > c.x && player.x < c.x + 32) {
+            c.state = 'shaking';
+            c.timer = 0.6;
         }
     }
 }
 
-function applyMovingPlatformRide(entity) {
-    if (entity.ridingPlatform && entity.ridingPlatform.type === 'moving') {
-        const p = entity.ridingPlatform;
-        if (p.moveAxis === 'h') {
-            entity.x += (p.x - (p.prevX || p.x));
+function checkHazardTouch(player) {
+    for (const h of hazardTiles) {
+        if (h.type === 'spike') {
+            if (player.x + player.width > h.x + 4 && player.x < h.x + h.width - 4 &&
+                player.y + player.height > h.y + 4 && player.y < h.y + h.height) {
+                damagePlayerHazard(player, 30);
+                return;
+            }
+        } else if (h.type === 'lava') {
+            if (player.x + player.width > h.x && player.x < h.x + h.width &&
+                player.y + player.height > h.y + 8) {
+                player.health = 0;
+                return;
+            }
+        } else if (h.type === 'firebar') {
+            const angle = gameTime * h.speed + h.phase;
+            for (let i = 1; i <= h.length; i++) {
+                const fx = h.x + Math.cos(angle) * i * 16;
+                const fy = h.y + Math.sin(angle) * i * 16;
+                if (player.x + player.width > fx - 6 && player.x < fx + 6 &&
+                    player.y + player.height > fy - 6 && player.y < fy + 6) {
+                    damagePlayerHazard(player, 30);
+                    return;
+                }
+            }
         }
     }
 }
 
-// === Q-BLOCK BUMP ===
+function damagePlayerHazard(player, amount) {
+    if (player.invincible > 0) return;
+    if (player.shieldHits > 0) {
+        player.shieldHits--;
+        player.invincible = 0.5;
+        triggerShake(3, 0.15);
+        playShieldHit();
+        return;
+    }
+    player.health -= amount;
+    player.invincible = 1.0;
+    triggerShake(6, 0.2);
+    playPlayerHit();
+    flashAlpha = 0.4;
+    player.vy = -300;
+}
+
 function checkQBlockBump(player, dt) {
-    // Check headBonk against any qBlock by x-range overlap
     if (player.headBonk) {
         const playerCx = player.x + player.width / 2;
         for (const b of qBlocks) {
@@ -424,11 +444,9 @@ function checkQBlockBump(player, dt) {
             }
         }
     }
-    // Tick bump animation
     for (const b of qBlocks) if (b.bumpT > 0) b.bumpT -= dt;
 }
 
-// === COIN COLLECT ===
 function checkCoinCollect(player) {
     for (const c of coins) {
         if (c.picked) continue;
@@ -446,16 +464,13 @@ function checkCoinCollect(player) {
     }
 }
 
-// === FLAG CHECK ===
 function checkFlagTouch(player) {
     if (!levelFlag) return false;
     if (player.x + player.width >= levelFlag.x &&
         player.x <= levelFlag.x + levelFlag.width + 10) {
-        // Snap player to pole
         player.x = levelFlag.x - player.width + 4;
         player.vx = 0;
         player.vy = 0;
-        // Compute time bonus from grab height
         const grabRatio = 1 - (player.y - levelFlag.top) / Math.max(1, levelFlag.height);
         const flagBonus = Math.floor(grabRatio * 5000);
         score += flagBonus;
@@ -470,101 +485,43 @@ function checkFlagTouch(player) {
 }
 
 function update(dt) {
-    const isAdventure = currentMode === GAME_MODE.ADVENTURE;
-    const isStory = currentMode === GAME_MODE.STORY;
-
-    if (isAdventure || isStory) {
-        updateCamera(player, dt, storyLevel);
-    }
+    updateCamera(player, dt, storyLevel);
 
     const camera = getCamera();
     const platforms = refreshPlatforms();
-    const blocks = getActiveBlocks();
-
-    if (isAdventure) {
-        updateSpecialPlatforms(platforms, dt);
-    }
-
-    if (isAdventure) {
-        for (let i = lastDiffTier; i < DIFF_THRESHOLDS.length; i++) {
-            if (survivalTime >= DIFF_THRESHOLDS[i]) {
-                const labels = ['Danger rising...', 'Onslaught!', 'Nightmare!', 'HELL MODE', 'IMPOSSIBLE'];
-                showAnnouncement(labels[i]);
-                triggerShake(4, 0.3);
-                lastDiffTier = i + 1;
-            }
-        }
-    }
+    updateMovingPlatforms();
+    updateCrumbleTiles(dt);
 
     const wasAirborne = !player.grounded;
     updatePlayer(player, dt, bullets, currentMode, camera, platforms);
 
-    if (isAdventure) {
-        applyMovingPlatformRide(player);
-        for (const enemy of enemies) {
-            applyMovingPlatformRide(enemy);
+    // Carry on horizontal movers
+    for (const m of movingPlatforms) {
+        if (player.ridingPlatform === m && m.moveAxis === 'h') {
+            player.x += (m.x - m.prevX);
+        }
+        for (const e of enemies) {
+            if (e.ridingPlatform === m && m.moveAxis === 'h') {
+                e.x += (m.x - m.prevX);
+            }
         }
     }
 
     if (wasAirborne && player.grounded) {
         spawnLandingDust(player.x + player.width / 2, player.y + player.height);
-        if (player.bouncedThisFrame) {
-            playBounce();
-            player.bouncedThisFrame = false;
-        }
     }
 
-    if (isAdventure) {
-        checkCrumbleTrigger(player, platforms);
-    }
-
-    if (isAdventure && blocks.length > 0) {
-        const hitBlocks = checkBlockCollisions(player, blocks);
-        for (const block of hitBlocks) {
-            block.broken = true;
-            const bx = block.x + block.width / 2;
-            const by = block.y + block.height / 2;
-            spawnKillParticles(bx, by, '#FFDD44');
-            playBlockBreak();
-            const dropType = getBlockDrop(block.worldY);
-            if (dropType) {
-                spawnPickup(bx, by, dropType);
-            }
-        }
-    }
-
-    // Story mode: ?-block bumps + coin collect + flag check
-    if (isStory) {
-        checkQBlockBump(player, dt);
-        checkCoinCollect(player);
-        if (checkFlagTouch(player)) {
-            // Disable enemies on flag touch
-            enemies = [];
-            return;
-        }
-    }
-
-    if (isAdventure) {
-        maxPlayerX = Math.max(maxPlayerX, player.x);
-        const distMeters = Math.floor(maxPlayerX / 100);
-        if (distMeters >= lastCheckpoint + 500) {
-            lastCheckpoint += 500;
-            showAnnouncement(`Checkpoint: ${lastCheckpoint}m!`);
-            playCheckpoint();
-        }
-        const newZone = getZoneIndex(distMeters);
-        if (newZone > currentZone) {
-            currentZone = newZone;
-            showAnnouncement(ZONES[currentZone].name);
-            triggerShake(4, 0.3);
-        }
+    checkCrumbleStand(player);
+    checkQBlockBump(player, dt);
+    checkCoinCollect(player);
+    checkHazardTouch(player);
+    if (checkFlagTouch(player)) {
+        enemies = [];
+        return;
     }
 
     moveBullets(bullets, dt, currentMode, camera);
     updateEnemies(enemies, player, dt, currentMode, camera, platforms);
-    if (!isStory) {
-        updateSpawner(dt, enemies, currentMode, camera, platforms);
-    }
 
     if (comboTimer > 0) {
         comboTimer -= dt;
@@ -573,45 +530,33 @@ function update(dt) {
 
     if (flashAlpha > 0) flashAlpha -= dt * 3;
 
-    // Bullet-enemy collisions
+    // Bullet-enemy
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
-        const bBox = {
-            x: b.x - b.radius, y: b.y - b.radius,
-            width: b.radius * 2, height: b.radius * 2,
-        };
+        const bBox = { x: b.x - b.radius, y: b.y - b.radius, width: b.radius * 2, height: b.radius * 2 };
         for (let j = enemies.length - 1; j >= 0; j--) {
             if (collides(bBox, enemies[j])) {
                 enemies[j].health -= b.damage;
                 enemies[j].hitFlash = 0.08;
                 bullets.splice(i, 1);
-
-                if (isAdventure && hasPowerUp(player, 'giant')) {
-                    const dir = enemies[j].x > player.x ? 1 : -1;
-                    enemies[j].vx += dir * 200;
-                }
-
                 if (enemies[j].health <= 0) {
-                    killEnemy(enemies, j, isAdventure, isStory);
+                    killEnemy(enemies, j);
                 }
                 break;
             }
         }
     }
 
-    // STOMP CHECK + enemy-player collisions
+    // Stomp + collision
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         if (!collides(player, enemy)) continue;
 
-        // Stomp: player falling, player feet near enemy top
         const playerFeet = player.y + player.height;
         const enemyTop = enemy.y;
         const fallingOnto = player.vy > 50 && playerFeet < enemyTop + 16;
-        const stompable = enemy.type !== 'tank' || enemy.stomped;
 
-        if (fallingOnto && stompable && enemy.type !== 'tank') {
-            // Stomp!
+        if (fallingOnto && enemy.type !== 'tank') {
             player.vy = -STOMP_BOUNCE;
             player.grounded = false;
             triggerHitPause(0.05);
@@ -627,15 +572,13 @@ function update(dt) {
                 spawnSquishParticles(enemy.x + enemy.width / 2, enemy.y, '#F8B070');
                 playStomp();
             } else {
-                // Goomba squish — score + remove
                 spawnSquishParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height, '#9C4810');
                 playStomp();
-                killEnemy(enemies, i, isAdventure, isStory, true);
+                killEnemy(enemies, i, true);
             }
             continue;
         }
 
-        // Tank stomp does damage too in story (but bounces player)
         if (fallingOnto && enemy.type === 'tank') {
             player.vy = -STOMP_BOUNCE * 0.7;
             enemy.health -= 1;
@@ -644,12 +587,11 @@ function update(dt) {
             triggerShake(4, 0.2);
             playStomp();
             if (enemy.health <= 0) {
-                killEnemy(enemies, i, isAdventure, isStory, true);
+                killEnemy(enemies, i, true);
             }
             continue;
         }
 
-        // Damage
         if (player.invincible <= 0) {
             const hasShield = player.shieldHits > 0;
             triggerShake(hasShield ? 3 : 6, 0.2);
@@ -676,14 +618,8 @@ function update(dt) {
                 spawnScorePopup(pu.x + 8, pu.y - 10, 'HP');
             } else if (pu.type === 'oneup') {
                 playOneUp();
-                if (currentMode === GAME_MODE.STORY) {
-                    storyLives++;
-                    showAnnouncement('1-UP!');
-                }
-            } else if (pu.type === 'shotgun') {
-                playPickup();
-                giveWeapon(player, 'shotgun', 8);
-                showAnnouncement('SHOTGUN!');
+                storyLives++;
+                showAnnouncement('1-UP!');
             } else if (pu.type === 'rapid') {
                 playPickup();
                 giveWeapon(player, 'rapid', 10);
@@ -704,25 +640,23 @@ function update(dt) {
         }
     }
 
-    // Cull fallen enemies
-    const fallLimit = (isAdventure || isStory) ? camera.y + CANVAS_HEIGHT + 100 : CANVAS_HEIGHT + 100;
+    const fallLimit = camera.y + CANVAS_HEIGHT + 100;
     for (let i = enemies.length - 1; i >= 0; i--) {
         if (enemies[i].y > fallLimit) enemies.splice(i, 1);
     }
 
-    // Tick enemy hit flash
     for (const e of enemies) if (e.hitFlash > 0) e.hitFlash -= dt;
 
     updateEffects(dt, platforms);
 
-    const deathY = (isAdventure || isStory) ? camera.y + CANVAS_HEIGHT + 50 : CANVAS_HEIGHT + 50;
+    const deathY = camera.y + CANVAS_HEIGHT + 50;
     if (player.y > deathY) {
         player.health = 0;
     }
 
     if (player.health <= 0 && state === STATE.PLAYING) {
         const px = player.x + player.width / 2;
-        const py = Math.min(player.y + player.height / 2, (isAdventure || isStory ? camera.y + CANVAS_HEIGHT : CANVAS_HEIGHT) - 20);
+        const py = Math.min(player.y + player.height / 2, camera.y + CANVAS_HEIGHT - 20);
         for (let i = 0; i < 3; i++) spawnKillParticles(px, py, COLOR_PLAYER);
         triggerShake(12, 0.5);
         flashAlpha = 0.6;
@@ -732,7 +666,7 @@ function update(dt) {
     }
 }
 
-function killEnemy(enemiesArr, j, isAdventure, isStory, fromStomp = false) {
+function killEnemy(enemiesArr, j, fromStomp = false) {
     const e = enemiesArr[j];
     const ex = e.x + e.width / 2;
     const ey = e.y + e.height / 2;
@@ -749,26 +683,7 @@ function killEnemy(enemiesArr, j, isAdventure, isStory, fromStomp = false) {
     spawnScorePopup(ex, ey - 20, comboText);
     killCount++;
 
-    if (!isStory) {
-        const dropRoll = Math.random();
-        if (dropRoll < 0.15) spawnHealthPickup(ex, ey);
-        else if (dropRoll < 0.20) spawnPickup(ex, ey, 'shotgun');
-        else if (dropRoll < 0.25) spawnPickup(ex, ey, 'rapid');
-        else if (isAdventure) {
-            if (dropRoll < 0.32) spawnPickup(ex, ey, 'speed');
-            else if (dropRoll < 0.38) spawnPickup(ex, ey, 'superJump');
-            else if (dropRoll < 0.43) spawnPickup(ex, ey, 'doubleShot');
-            else if (dropRoll < 0.46) spawnPickup(ex, ey, 'shield');
-            else if (dropRoll < 0.48) spawnPickup(ex, ey, 'giant');
-        }
-        if (killCount >= nextWaveAt) {
-            showAnnouncement(`Wave ${Math.floor(killCount / 10) + 1}!`);
-            nextWaveAt += 10;
-        }
-    } else {
-        // Story drops: rare 1-up
-        if (Math.random() < 0.04) spawnPickup(ex, ey, 'oneup');
-    }
+    if (Math.random() < 0.04) spawnPickup(ex, ey, 'oneup');
     enemiesArr.splice(j, 1);
 }
 
@@ -776,59 +691,13 @@ function triggerHitPause(duration) {
     hitPauseTimer = Math.max(hitPauseTimer, duration);
 }
 
-function getBlockDrop(worldY) {
-    const roll = Math.random();
-    if (worldY < 200) {
-        if (roll < 0.25) return 'shield';
-        if (roll < 0.50) return 'giant';
-        if (roll < 0.80) return 'doubleShot';
-        return null;
-    } else if (worldY < 350) {
-        if (roll < 0.25) return 'speed';
-        if (roll < 0.45) return 'doubleShot';
-        if (roll < 0.70) return 'superJump';
-        return null;
-    } else {
-        if (roll < 0.25) return 'superJump';
-        if (roll < 0.45) return 'health';
-        if (roll < 0.60) return 'speed';
-        return null;
-    }
-}
-
-function getZoneIndex(distMeters) {
-    for (let i = ZONES.length - 1; i >= 0; i--) {
-        if (distMeters >= ZONES[i].dist) return i;
-    }
-    return 0;
-}
-
-function getZoneData() {
-    const distMeters = Math.floor(maxPlayerX / 100);
-    const zi = getZoneIndex(distMeters);
-    const zone = ZONES[zi];
-    const nextZone = ZONES[zi + 1];
-    if (!nextZone) return { zone, blend: 0 };
-    const distIntoZone = distMeters - zone.dist;
-    const zoneWidth = nextZone.dist - zone.dist;
-    const transitionStart = zoneWidth - 100;
-    if (distIntoZone > transitionStart) {
-        return { zone, nextZone, blend: (distIntoZone - transitionStart) / 100 };
-    }
-    return { zone, blend: 0 };
-}
-
 function render(dt) {
     const camera = getCamera();
     const platforms = getActivePlatforms();
-    const blocks = getActiveBlocks();
-    const isAdventure = currentMode === GAME_MODE.ADVENTURE;
-    const isStory = currentMode === GAME_MODE.STORY;
 
     const shake = getShakeOffset();
     ctx.save();
 
-    // Zoom punch
     if (zoomPunch > 0) {
         const z = 1 + zoomPunch * 0.04;
         ctx.translate(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
@@ -837,22 +706,19 @@ function render(dt) {
     }
     ctx.translate(shake.x, shake.y);
 
-    const zoneData = isAdventure ? getZoneData() : null;
-    const storyData = isStory ? {
+    const storyData = {
         decoTiles, pipeTiles, qBlocks, coins, flag: levelFlag, castle: levelCastle,
+        hazards: hazardTiles, movingPlatforms, crumbleTilesList,
         lives: storyLives, coinCount, timeRemaining: storyTimeRemaining,
-        levelName: storyLevel ? storyLevel.name : ''
-    } : null;
-    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, currentMode, camera, platforms, blocks, zoneData, gameTime, storyData);
+        levelName: storyLevel ? storyLevel.name : '',
+        theme: storyLevel ? storyLevel.theme : 'overworld',
+    };
+    renderGame(player, enemies, bullets, score, dt, killCount, survivalTime, currentMode, camera, platforms, [], null, gameTime, storyData);
 
-    if (isAdventure || isStory) {
-        ctx.save();
-        ctx.translate(-camera.x, -camera.y);
-        renderWorldEffects(ctx);
-        ctx.restore();
-    } else {
-        renderWorldEffects(ctx);
-    }
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+    renderWorldEffects(ctx);
+    ctx.restore();
 
     renderScreenEffects(ctx);
 
@@ -866,31 +732,6 @@ function render(dt) {
         ctx.textAlign = 'left';
     }
 
-    if (isAdventure) {
-        const distMeters = Math.floor(maxPlayerX / 100);
-        const displayScore = score + distMeters;
-        ctx.fillStyle = '#88CCFF';
-        ctx.font = 'bold 14px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Distance: ${distMeters}m`, 10, 64);
-        let puY = 82;
-        const puColors = { speed: '#FFFF44', superJump: '#44FF88', doubleShot: '#FF44FF', shield: '#88BBFF', giant: '#FF8844' };
-        const puLabels = { speed: 'SPD', superJump: 'JMP', doubleShot: 'DBL', shield: 'SHD', giant: 'BIG' };
-        for (const type in player.activePowerUps) {
-            const timer = player.activePowerUps[type];
-            ctx.fillStyle = puColors[type] || '#fff';
-            ctx.font = 'bold 11px monospace';
-            const label = puLabels[type] || type.slice(0, 3).toUpperCase();
-            const display = type === 'shield' ? `${label} ${player.shieldHits}` : `${label} ${Math.ceil(timer)}s`;
-            ctx.fillText(display, 10, puY);
-            puY += 16;
-        }
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '20px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText('Score: ' + displayScore, CANVAS_WIDTH - 10, 26);
-    }
-
     ctx.restore();
 
     if (flashAlpha > 0) {
@@ -901,6 +742,4 @@ function render(dt) {
     }
 }
 
-export function getGameMode() {
-    return currentMode;
-}
+export function getGameMode() { return currentMode; }

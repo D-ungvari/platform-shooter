@@ -1,5 +1,5 @@
-// Game modes
-export const GAME_MODE = { ARENA: 'arena', ADVENTURE: 'adventure', STORY: 'story' };
+// Game modes — story only (arena + adventure removed)
+export const GAME_MODE = { STORY: 'story' };
 
 // Canvas
 export const CANVAS_WIDTH = 1024;
@@ -113,24 +113,9 @@ export const POWERUP_GIANT_SCALE = 1.5;
 export const POWERUP_GIANT_DAMAGE_MULT = 1.5;
 export const POWERUP_GIANT_DURATION = 8;
 
-// Terrain (legacy adventure mode)
-export const CHUNK_WIDTH = 2048;
-export const CRUMBLE_DELAY = 1.0;
-export const CRUMBLE_RESPAWN = 5.0;
 export const BOUNCE_FORCE_MULT = 2.0;
 
 // Story mode
 export const STORY_LIVES = 3;
 export const STORY_TIME_LIMIT = 400;
 export const COIN_VALUE = 50;
-
-// Platforms (arena mode)
-export const PLATFORMS = [
-    { x: 0, y: 556, width: 1024, height: 20 },
-    { x: 50, y: 440, width: 180, height: 16 },
-    { x: 420, y: 460, width: 180, height: 16 },
-    { x: 790, y: 440, width: 180, height: 16 },
-    { x: 220, y: 320, width: 180, height: 16 },
-    { x: 620, y: 320, width: 180, height: 16 },
-    { x: 400, y: 200, width: 220, height: 16 },
-];

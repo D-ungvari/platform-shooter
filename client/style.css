@@ -251,3 +251,90 @@ button:disabled {
     background: #555;
 }
 
+#victory-next {
+    background: #F8B800;
+    color: #5C2818;
+    font-weight: bold;
+}
+
+#victory-next:hover {
+    background: #FFE890;
+}
+
+.victory-level {
+    color: #FFE890;
+    font-size: 22px;
+    margin-bottom: 8px;
+}
+
+.world-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    max-width: 600px;
+    margin: 16px 0;
+}
+
+.world-node {
+    padding: 16px 24px;
+    border: 3px solid #fff;
+    border-radius: 6px;
+    background: #1a1a2e;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    text-align: center;
+    min-width: 240px;
+}
+
+.world-node:hover:not(.locked) {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 0 rgba(0, 0, 0, 0.6);
+}
+
+.world-node.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: #555;
+}
+
+.world-node.cleared {
+    border-color: #F8B800;
+}
+
+.world-node .world-name {
+    font-size: 22px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.world-node .world-sub {
+    font-size: 13px;
+    color: #aaa;
+    margin: 6px 0;
+}
+
+.world-node .world-status {
+    font-size: 14px;
+    color: #F8B800;
+}
+
+.world-node.theme-overworld { background: linear-gradient(180deg, #5C94FC 0%, #00A844 100%); }
+.world-node.theme-underground { background: linear-gradient(180deg, #000020 0%, #181830 100%); }
+.world-node.theme-sky { background: linear-gradient(180deg, #80C0FC 0%, #FFE890 100%); }
+.world-node.theme-castle { background: linear-gradient(180deg, #380808 0%, #100008 100%); }
+
+.world-node.theme-sky .world-sub,
+.world-node.theme-overworld .world-sub {
+    color: #fff;
+}
+
+.reset-hint {
+    font-size: 11px;
+    color: #888;
+    margin-top: 12px;
+}
+
+#world-back {
+    margin-top: 12px;
+}
+

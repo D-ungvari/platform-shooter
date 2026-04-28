@@ -180,6 +180,7 @@ function build() {
 
 export const LEVEL_1 = {
     name: 'World 1-1',
+    theme: 'overworld',
     width: W,
     height: H,
     grid: build(),

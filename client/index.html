@@ -14,9 +14,7 @@
             <div class="menu-content">
                 <h1 class="title-mario">SUPER PLATFORM BROS</h1>
                 <div class="mode-select">
-                    <button id="btn-story" class="mode-btn mode-story">Story Mode<br><span class="mode-sub">World 1-1</span></button>
-                    <button id="btn-arena" class="mode-btn">Arena Mode</button>
-                    <button id="btn-adventure" class="mode-btn">Adventure Mode</button>
+                    <button id="btn-story" class="mode-btn mode-story">Story Mode<br><span class="mode-sub">Select World</span></button>
                 </div>
                 <div class="controls-info">
                     <p>WASD / Arrows — Move &amp; Jump</p>
@@ -26,6 +24,15 @@
                 </div>
                 <h2>High Scores</h2>
                 <ol id="score-list"><li>No scores yet</li></ol>
+            </div>
+        </div>
+
+        <div id="world-select" class="overlay" style="display:none">
+            <div class="menu-content">
+                <h1 class="title-mario">SELECT WORLD</h1>
+                <div id="world-grid" class="world-grid"></div>
+                <button id="world-back" class="mode-btn">Back</button>
+                <p class="reset-hint" id="reset-hint">Hold R for 2s to reset progress</p>
             </div>
         </div>
 
@@ -52,11 +59,13 @@
 
         <div id="victory-screen" class="overlay victory" style="display:none">
             <h1 class="victory-title">COURSE CLEAR!</h1>
+            <p class="victory-level" id="victory-level">World 1-1</p>
             <p class="victory-stars" id="victory-stars">★★★</p>
             <p class="final-score-big">Score: <span id="victory-score">0</span></p>
             <p class="final-stats">Coins × <span id="victory-coins">0</span> &nbsp;|&nbsp; Time Bonus: <span id="victory-bonus">0</span></p>
-            <button id="victory-again">Play Again</button>
-            <button id="victory-menu">Main Menu</button>
+            <button id="victory-next">Next Level</button>
+            <button id="victory-again">Replay</button>
+            <button id="victory-menu">World Select</button>
         </div>
     </div>
 

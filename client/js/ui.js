@@ -1,19 +1,26 @@
 import { fetchScores, submitScore } from './api.js';
 import { GAME_MODE } from './constants.js';
 
-let menuEl, gameOverEl, pauseEl, victoryEl, scoreListEl, goScoreListEl;
+let menuEl, gameOverEl, pauseEl, victoryEl, worldSelectEl, scoreListEl, goScoreListEl;
 let finalScoreEl, nameInput, submitBtn, playAgainBtn, rankEl, errorEl;
-let onStartArena, onStartAdventure, onStartStory, onRestart, onResume;
-let lastMode = GAME_MODE.STORY;
+let onStartStoryAt, onRestart, onResume, onAdvance;
+let resetHoldTimer = 0;
+
+const WORLDS = [
+    { name: 'World 1-1', sub: 'Overworld', theme: 'overworld' },
+    { name: 'World 1-2', sub: 'Underground', theme: 'underground' },
+    { name: 'World 1-3', sub: 'Sky High', theme: 'sky' },
+    { name: 'World 1-4', sub: 'Castle', theme: 'castle' },
+];
 
 export function initUI(callbacks) {
-    onStartArena = callbacks.onStartArena;
-    onStartAdventure = callbacks.onStartAdventure;
-    onStartStory = callbacks.onStartStory;
+    onStartStoryAt = callbacks.onStartStoryAt;
     onRestart = callbacks.onRestart;
     onResume = callbacks.onResume;
+    onAdvance = callbacks.onAdvance;
 
     menuEl = document.getElementById('menu-screen');
+    worldSelectEl = document.getElementById('world-select');
     scoreListEl = document.getElementById('score-list');
 
     gameOverEl = document.getElementById('gameover-screen');
@@ -28,21 +35,14 @@ export function initUI(callbacks) {
     pauseEl = document.getElementById('pause-screen');
     victoryEl = document.getElementById('victory-screen');
 
-    document.getElementById('btn-arena').addEventListener('click', () => {
-        lastMode = GAME_MODE.ARENA;
-        startGame(onStartArena);
+    document.getElementById('btn-story').addEventListener('click', () => {
+        showWorldSelect();
     });
-    document.getElementById('btn-adventure').addEventListener('click', () => {
-        lastMode = GAME_MODE.ADVENTURE;
-        startGame(onStartAdventure);
+
+    document.getElementById('world-back').addEventListener('click', () => {
+        worldSelectEl.style.display = 'none';
+        menuEl.style.display = 'flex';
     });
-    const storyBtn = document.getElementById('btn-story');
-    if (storyBtn) {
-        storyBtn.addEventListener('click', () => {
-            lastMode = GAME_MODE.STORY;
-            startGame(onStartStory);
-        });
-    }
 
     submitBtn.addEventListener('click', handleSubmit);
     nameInput.addEventListener('keydown', e => {
@@ -56,35 +56,89 @@ export function initUI(callbacks) {
 
     document.getElementById('resume-btn').addEventListener('click', () => onResume());
 
-    const victoryAgainBtn = document.getElementById('victory-again');
-    if (victoryAgainBtn) {
-        victoryAgainBtn.addEventListener('click', () => {
-            hideVictory();
-            onRestart();
-        });
-    }
-    const victoryMenuBtn = document.getElementById('victory-menu');
-    if (victoryMenuBtn) {
-        victoryMenuBtn.addEventListener('click', () => {
-            hideVictory();
-            showMenu();
-        });
-    }
+    document.getElementById('victory-next').addEventListener('click', () => {
+        hideVictory();
+        if (onAdvance) onAdvance();
+    });
+    document.getElementById('victory-again').addEventListener('click', () => {
+        hideVictory();
+        onRestart();
+    });
+    document.getElementById('victory-menu').addEventListener('click', () => {
+        hideVictory();
+        showWorldSelect();
+    });
+
+    // Reset progress hold-R
+    window.addEventListener('keydown', e => {
+        if (e.key === 'r' && worldSelectEl.style.display !== 'none') {
+            if (resetHoldTimer === 0) {
+                resetHoldTimer = setTimeout(() => {
+                    localStorage.removeItem('spb_progress_v1');
+                    refreshWorldGrid();
+                    document.getElementById('reset-hint').textContent = 'Progress reset!';
+                    setTimeout(() => {
+                        document.getElementById('reset-hint').textContent = 'Hold R for 2s to reset progress';
+                    }, 1500);
+                    resetHoldTimer = 0;
+                }, 2000);
+            }
+        }
+    });
+    window.addEventListener('keyup', e => {
+        if (e.key === 'r' && resetHoldTimer) {
+            clearTimeout(resetHoldTimer);
+            resetHoldTimer = 0;
+        }
+    });
 
     loadScores(scoreListEl);
 }
 
-function startGame(startFn) {
+function showWorldSelect() {
     menuEl.style.display = 'none';
-    startFn();
+    worldSelectEl.style.display = 'flex';
+    refreshWorldGrid();
 }
 
-export function getLastMode() {
-    return lastMode;
+function refreshWorldGrid() {
+    const grid = document.getElementById('world-grid');
+    grid.innerHTML = '';
+    const progress = loadProgress();
+    for (let i = 0; i < WORLDS.length; i++) {
+        const w = WORLDS[i];
+        const unlocked = i < progress.unlocked;
+        const cleared = progress.cleared.includes(i);
+        const node = document.createElement('div');
+        node.className = 'world-node theme-' + w.theme + (unlocked ? '' : ' locked') + (cleared ? ' cleared' : '');
+        node.innerHTML = `
+            <div class="world-name">${w.name}</div>
+            <div class="world-sub">${w.sub}</div>
+            <div class="world-status">${cleared ? '★ CLEARED' : unlocked ? 'PLAY' : '🔒 LOCKED'}</div>
+        `;
+        if (unlocked) {
+            node.addEventListener('click', () => {
+                worldSelectEl.style.display = 'none';
+                if (onStartStoryAt) onStartStoryAt(i);
+            });
+        }
+        grid.appendChild(node);
+    }
 }
+
+function loadProgress() {
+    try {
+        const raw = localStorage.getItem('spb_progress_v1');
+        if (!raw) return { cleared: [], unlocked: 1 };
+        return JSON.parse(raw);
+    } catch (e) { return { cleared: [], unlocked: 1 }; }
+}
+
+export function getLastMode() { return GAME_MODE.STORY; }
 
 export function showMenu() {
     menuEl.style.display = 'flex';
+    if (worldSelectEl) worldSelectEl.style.display = 'none';
     gameOverEl.style.display = 'none';
     pauseEl.style.display = 'none';
     if (victoryEl) victoryEl.style.display = 'none';
@@ -114,11 +168,26 @@ export function showVictory(data) {
     const coinsEl = document.getElementById('victory-coins');
     const bonusEl = document.getElementById('victory-bonus');
     const starsEl = document.getElementById('victory-stars');
+    const levelEl = document.getElementById('victory-level');
+    const nextBtn = document.getElementById('victory-next');
     if (scoreEl) scoreEl.textContent = data.score;
     if (coinsEl) coinsEl.textContent = data.coins;
     if (bonusEl) bonusEl.textContent = data.bonus;
     if (starsEl) {
         starsEl.textContent = '★'.repeat(data.stars) + '☆'.repeat(3 - data.stars);
+    }
+    if (levelEl) levelEl.textContent = data.levelName || '';
+    if (nextBtn) {
+        if (data.isLastLevel) {
+            nextBtn.style.display = 'none';
+            // Show a "you finished the game" caption via title
+            const titleEl = victoryEl.querySelector('.victory-title');
+            if (titleEl) titleEl.textContent = 'GAME COMPLETE!';
+        } else {
+            nextBtn.style.display = 'inline-block';
+            const titleEl = victoryEl.querySelector('.victory-title');
+            if (titleEl) titleEl.textContent = 'COURSE CLEAR!';
+        }
     }
 }
 

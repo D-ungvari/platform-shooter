@@ -1,4 +1,4 @@
-import { GRAVITY, PLATFORMS, JUMP_FORCE, BOUNCE_FORCE_MULT } from './constants.js';
+import { GRAVITY, JUMP_FORCE, BOUNCE_FORCE_MULT } from './constants.js';
 
 export function collides(a, b) {
     return a.x < b.x + b.width &&
@@ -14,7 +14,7 @@ export function applyGravity(entity, dt) {
 }
 
 export function resolvePlatformCollisions(entity, platforms) {
-    const plats = platforms || PLATFORMS;
+    const plats = platforms || [];
     entity.grounded = false;
     entity.ridingPlatform = null;
     entity.headBonk = null;

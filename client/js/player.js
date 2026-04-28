@@ -2,7 +2,7 @@ import {
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, JUMP_FORCE,
     PLAYER_MAX_HEALTH, INVINCIBILITY_DURATION, SHOOT_COOLDOWN,
     BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE,
-    CANVAS_WIDTH, CANVAS_HEIGHT, PLATFORMS, GAME_MODE,
+    CANVAS_WIDTH, CANVAS_HEIGHT, GAME_MODE,
     POWERUP_SPEED_MULT, POWERUP_SPEED_DURATION,
     POWERUP_JUMP_MULT, POWERUP_JUMP_DURATION,
     POWERUP_DOUBLE_SPREAD, POWERUP_DOUBLE_DURATION,
@@ -26,13 +26,9 @@ const POWERUP_DURATIONS = {
 };
 
 export function createPlayer(mode) {
-    let startX;
-    if (mode === GAME_MODE.ADVENTURE) startX = 200;
-    else if (mode === GAME_MODE.STORY) startX = 96;
-    else startX = CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2;
     return {
-        x: startX,
-        y: PLATFORMS[0].y - PLAYER_HEIGHT,
+        x: 96,
+        y: 200,
         width: PLAYER_WIDTH,
         height: PLAYER_HEIGHT,
         baseWidth: PLAYER_WIDTH,
@@ -167,14 +163,9 @@ export function updatePlayer(player, dt, bullets, mode, camera, platforms) {
     player.squashY += (1 - player.squashY) * Math.min(1, dt * 14);
     player.squashX += (1 - player.squashX) * Math.min(1, dt * 14);
 
-    if (mode === GAME_MODE.ADVENTURE || mode === GAME_MODE.STORY) {
-        if (player.x < 0) player.x = 0;
-    } else {
-        if (player.x + player.width < 0) player.x = CANVAS_WIDTH;
-        if (player.x > CANVAS_WIDTH) player.x = -player.width;
-    }
+    if (player.x < 0) player.x = 0;
 
-    const mouse = (mode === GAME_MODE.ADVENTURE || mode === GAME_MODE.STORY) ? getWorldMouse(camera) : getMouse();
+    const mouse = getWorldMouse(camera);
     const cx = player.x + player.width / 2;
     player.facingRight = mouse.x >= cx;
 

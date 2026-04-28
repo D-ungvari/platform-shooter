@@ -17,6 +17,9 @@ export function loadLevel(levelData) {
     const coins = [];
     const blocks = []; // ?-blocks
     const pipes = [];
+    const hazards = []; // spikes, lava, fire bars
+    const movingPlatforms = [];
+    const crumbleTiles = [];
     let flag = null;
     let castle = null;
 
@@ -27,8 +30,8 @@ export function loadLevel(levelData) {
     };
 
     // First pass: collect runs of solid tiles into wider rect platforms.
-    // Solid tiles: G, B, Q, q, P, p, [, ], -, =
-    const SOLID = new Set(['G', 'B', 'Q', 'q', 'P', 'p', '[', ']', '-', '=', '#']);
+    // Solid tiles include 'x' (crumble — solid until triggered)
+    const SOLID = new Set(['G', 'B', 'Q', 'q', 'P', 'p', '[', ']', '-', '=', '#', 'x']);
     const visited = Array.from({ length: tilesH }, () => new Array(tilesW).fill(false));
 
     for (let r = 0; r < tilesH; r++) {
@@ -94,8 +97,40 @@ export function loadLevel(levelData) {
                 flag.top = y;
                 flag.cloth = { x: x + TILE / 2, y: y + 6, w: TILE, h: TILE - 12 };
             } else if (t === 'C') {
-                // castle anchor
                 castle = { x, y };
+            } else if (t === 'X') {
+                // Spikes: not solid, deal damage on contact
+                hazards.push({ x, y, width: TILE, height: TILE, type: 'spike' });
+            } else if (t === 'L') {
+                // Lava: instant death zone (also rendered)
+                hazards.push({ x, y, width: TILE, height: TILE, type: 'lava' });
+            } else if (t === '*') {
+                // Fire bar pivot — generates rotating spike chain
+                hazards.push({ x: x + TILE / 2, y: y + TILE / 2, type: 'firebar', length: 4, phase: Math.random() * Math.PI * 2, speed: 2 });
+            } else if (t === 'x') {
+                // Crumble brick (also solid via SOLID set above)
+                crumbleTiles.push({ x, y, state: 'idle', timer: 0, respawn: 0, originY: y });
+                decoTiles.push({ x, y, width: TILE, height: TILE, type: 'crumble' });
+            } else if (t === '~') {
+                // Moving platform horizontal anchor (3 tiles wide)
+                movingPlatforms.push({
+                    x, y,
+                    width: TILE * 3,
+                    height: TILE / 2,
+                    originX: x, originY: y,
+                    moveAxis: 'h', moveRange: 96, moveSpeed: 1.5, movePhase: Math.random() * Math.PI * 2,
+                    prevX: x, prevY: y,
+                });
+            } else if (t === '!') {
+                // Moving platform vertical
+                movingPlatforms.push({
+                    x, y,
+                    width: TILE * 3,
+                    height: TILE / 2,
+                    originX: x, originY: y,
+                    moveAxis: 'v', moveRange: 96, moveSpeed: 1.2, movePhase: Math.random() * Math.PI * 2,
+                    prevX: x, prevY: y,
+                });
             }
         }
     }
@@ -134,8 +169,12 @@ export function loadLevel(levelData) {
         coins,
         blocks,
         pipes,
+        hazards,
+        movingPlatforms,
+        crumbleTiles,
         flag,
         castle,
+        theme: levelData.theme || 'overworld',
         enemies: levelData.enemies || [],
         groundY: tilesH * TILE - TILE * 2,
     };
