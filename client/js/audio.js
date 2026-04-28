@@ -114,6 +114,68 @@ export function playCheckpoint() {
     setTimeout(() => playTone(800, 0.12, 'sine', 0.08), 200);
 }
 
+export function playStomp() {
+    const ctx = getCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(180, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+}
+
+export function playCoin() {
+    const ctx = getCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(988, ctx.currentTime);
+    osc.frequency.setValueAtTime(1319, ctx.currentTime + 0.04);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+}
+
+export function playBumpBlock() {
+    playTone(140, 0.06, 'square', 0.1);
+    playTone(80, 0.12, 'sawtooth', 0.06);
+}
+
+export function playFlag() {
+    const ctx = getCtx();
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((n, i) => {
+        setTimeout(() => playTone(n, 0.09, 'square', 0.1), i * 50);
+    });
+}
+
+export function playCourseClear() {
+    const ctx = getCtx();
+    // Course-clear arpeggio (mario-style)
+    const melody = [
+        [523, 0.12], [659, 0.12], [784, 0.12], [1047, 0.18],
+        [784, 0.12], [831, 0.12], [988, 0.12], [1319, 0.4],
+    ];
+    let t = 0;
+    for (const [freq, dur] of melody) {
+        setTimeout(() => playTone(freq, dur, 'square', 0.1), t * 1000);
+        t += dur * 0.85;
+    }
+}
+
+export function playOneUp() {
+    const notes = [659, 784, 1047, 1319, 1568];
+    notes.forEach((n, i) => setTimeout(() => playTone(n, 0.08, 'square', 0.09), i * 60));
+}
+
 export function playPlayerDeath() {
     playNoise(0.3, 0.2);
     playTone(200, 0.3, 'sawtooth', 0.15);

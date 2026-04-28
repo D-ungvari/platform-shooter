@@ -1,4 +1,5 @@
 const keys = {};
+const keysPrev = {};
 const mouse = { x: 0, y: 0, down: false, clicked: false };
 
 export function initInput(canvas) {
@@ -12,7 +13,6 @@ export function initInput(canvas) {
 
     canvas.addEventListener('mousemove', e => {
         const rect = canvas.getBoundingClientRect();
-        // Scale mouse coordinates from visual size back to logical canvas size
         mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
         mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
     });
@@ -34,6 +34,31 @@ export function isKeyDown(key) {
     return !!keys[key];
 }
 
+export function wasKeyPressed(key) {
+    return !!keys[key] && !keysPrev[key];
+}
+
+export function wasKeyReleased(key) {
+    return !keys[key] && !!keysPrev[key];
+}
+
+// Jump key abstraction — w / space / arrowup
+export function isJumpDown() {
+    return !!(keys['w'] || keys[' '] || keys['arrowup']);
+}
+
+export function jumpPressedThisFrame() {
+    const now = !!(keys['w'] || keys[' '] || keys['arrowup']);
+    const prev = !!(keysPrev['w'] || keysPrev[' '] || keysPrev['arrowup']);
+    return now && !prev;
+}
+
+export function jumpReleasedThisFrame() {
+    const now = !!(keys['w'] || keys[' '] || keys['arrowup']);
+    const prev = !!(keysPrev['w'] || keysPrev[' '] || keysPrev['arrowup']);
+    return !now && prev;
+}
+
 export function getMouse() {
     return mouse;
 }
@@ -49,4 +74,10 @@ export function getWorldMouse(camera) {
 
 export function resetFrameInput() {
     mouse.clicked = false;
+    // Snapshot key state for edge detection on next frame
+    for (const k in keys) keysPrev[k] = keys[k];
+    // Also clear keys that have been released so prev cleanup works
+    for (const k in keysPrev) {
+        if (!keys[k]) keysPrev[k] = false;
+    }
 }

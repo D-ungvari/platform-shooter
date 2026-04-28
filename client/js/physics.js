@@ -17,6 +17,7 @@ export function resolvePlatformCollisions(entity, platforms) {
     const plats = platforms || PLATFORMS;
     entity.grounded = false;
     entity.ridingPlatform = null;
+    entity.headBonk = null;
 
     for (const plat of plats) {
         // Skip broken crumbling platforms
@@ -54,6 +55,7 @@ export function resolvePlatformCollisions(entity, platforms) {
                 if (entity.vy < 0) {
                     entity.y = plat.y + plat.height;
                     entity.vy = 0;
+                    entity.headBonk = plat;
                 }
             }
         } else {

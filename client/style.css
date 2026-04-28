@@ -181,3 +181,73 @@ button:disabled {
 #resume-btn {
     margin-top: 16px;
 }
+
+.title-mario {
+    color: #F8B800;
+    text-shadow: 4px 4px 0 #C84C0C, 8px 8px 0 rgba(0, 0, 0, 0.6);
+    letter-spacing: 4px;
+    font-size: 42px !important;
+    font-weight: bold;
+    margin-bottom: 24px !important;
+}
+
+.mode-select {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.mode-story {
+    background: linear-gradient(180deg, #C84C0C 0%, #7C2810 100%);
+    border-color: #F8B070;
+    color: #FFFFFF;
+    font-size: 18px;
+    padding: 14px 32px;
+    box-shadow: 0 0 20px rgba(248, 184, 0, 0.4);
+}
+
+.mode-story:hover {
+    background: linear-gradient(180deg, #F8B070 0%, #C84C0C 100%);
+    border-color: #FFFFFF;
+}
+
+.mode-sub {
+    font-size: 12px;
+    color: #FFE890;
+}
+
+.overlay.victory {
+    background: linear-gradient(180deg, rgba(92, 148, 252, 0.95) 0%, rgba(0, 168, 68, 0.95) 100%);
+    cursor: default;
+}
+
+.victory-title {
+    color: #FFFFFF;
+    text-shadow: 4px 4px 0 #C84C0C, 8px 8px 0 rgba(0, 0, 0, 0.6);
+    font-size: 56px !important;
+    letter-spacing: 4px;
+    animation: bounce 0.6s infinite alternate;
+}
+
+.victory-stars {
+    font-size: 56px;
+    color: #F8B800;
+    text-shadow: 3px 3px 0 #C84C0C;
+    margin: 16px 0;
+}
+
+@keyframes bounce {
+    from { transform: translateY(0); }
+    to { transform: translateY(-12px); }
+}
+
+#victory-again, #victory-menu {
+    margin-top: 12px;
+    margin-right: 8px;
+    background: #00A800;
+}
+
+#victory-menu {
+    background: #555;
+}
+

@@ -55,6 +55,8 @@ export function updateEnemies(enemies, player, dt, mode, camera, platforms) {
     const playerCx = player.x + player.width / 2;
     const playerCy = player.y + player.height / 2;
     const isAdventure = mode === GAME_MODE.ADVENTURE;
+    const isStory = mode === GAME_MODE.STORY;
+    const isWorld = isAdventure || isStory;
 
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
@@ -62,7 +64,7 @@ export function updateEnemies(enemies, player, dt, mode, camera, platforms) {
         const enemyCy = enemy.y + enemy.height / 2;
 
         if (enemy.type === 'flyer') {
-            const dx = isAdventure ? (playerCx - enemyCx) : wrapDx(enemyCx, playerCx);
+            const dx = isWorld ? (playerCx - enemyCx) : wrapDx(enemyCx, playerCx);
             const dy = playerCy - enemyCy;
             const len = Math.sqrt(dx * dx + dy * dy);
             if (len > 0) {
@@ -73,7 +75,7 @@ export function updateEnemies(enemies, player, dt, mode, camera, platforms) {
             enemy.y += enemy.vy * dt;
         } else {
             // Runner and Tank: walk toward player
-            const dx = isAdventure ? (playerCx - enemyCx) : wrapDx(enemyCx, playerCx);
+            const dx = isWorld ? (playerCx - enemyCx) : wrapDx(enemyCx, playerCx);
             enemy.vx = dx < 0 ? -enemy.speed : enemy.speed;
 
             // Runners jump toward player if player is significantly above
@@ -93,9 +95,9 @@ export function updateEnemies(enemies, player, dt, mode, camera, platforms) {
             resolvePlatformCollisions(enemy, platforms);
         }
 
-        if (isAdventure) {
-            // Adventure: despawn enemies far behind camera
-            if (enemy.x + enemy.width < camera.x - CANVAS_WIDTH * 2) {
+        if (isWorld) {
+            // World modes: despawn enemies far behind camera
+            if (!enemy.fromLevel && enemy.x + enemy.width < camera.x - CANVAS_WIDTH * 2) {
                 enemies.splice(i, 1);
             }
         } else {

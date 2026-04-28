@@ -1,22 +1,21 @@
 import { fetchScores, submitScore } from './api.js';
 import { GAME_MODE } from './constants.js';
 
-let menuEl, gameOverEl, pauseEl, scoreListEl, goScoreListEl;
+let menuEl, gameOverEl, pauseEl, victoryEl, scoreListEl, goScoreListEl;
 let finalScoreEl, nameInput, submitBtn, playAgainBtn, rankEl, errorEl;
-let onStartArena, onStartAdventure, onRestart, onResume;
-let lastMode = GAME_MODE.ARENA;
+let onStartArena, onStartAdventure, onStartStory, onRestart, onResume;
+let lastMode = GAME_MODE.STORY;
 
 export function initUI(callbacks) {
     onStartArena = callbacks.onStartArena;
     onStartAdventure = callbacks.onStartAdventure;
+    onStartStory = callbacks.onStartStory;
     onRestart = callbacks.onRestart;
     onResume = callbacks.onResume;
 
-    // Menu screen
     menuEl = document.getElementById('menu-screen');
     scoreListEl = document.getElementById('score-list');
 
-    // Game over screen
     gameOverEl = document.getElementById('gameover-screen');
     finalScoreEl = document.getElementById('final-score');
     nameInput = document.getElementById('name-input');
@@ -26,10 +25,9 @@ export function initUI(callbacks) {
     rankEl = document.getElementById('rank-display');
     errorEl = document.getElementById('submit-error');
 
-    // Pause screen
     pauseEl = document.getElementById('pause-screen');
+    victoryEl = document.getElementById('victory-screen');
 
-    // Mode buttons
     document.getElementById('btn-arena').addEventListener('click', () => {
         lastMode = GAME_MODE.ARENA;
         startGame(onStartArena);
@@ -38,8 +36,14 @@ export function initUI(callbacks) {
         lastMode = GAME_MODE.ADVENTURE;
         startGame(onStartAdventure);
     });
+    const storyBtn = document.getElementById('btn-story');
+    if (storyBtn) {
+        storyBtn.addEventListener('click', () => {
+            lastMode = GAME_MODE.STORY;
+            startGame(onStartStory);
+        });
+    }
 
-    // Game over buttons
     submitBtn.addEventListener('click', handleSubmit);
     nameInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') handleSubmit();
@@ -50,12 +54,23 @@ export function initUI(callbacks) {
         onRestart();
     });
 
-    // Pause resume button
-    document.getElementById('resume-btn').addEventListener('click', () => {
-        onResume();
-    });
+    document.getElementById('resume-btn').addEventListener('click', () => onResume());
 
-    // Load scores on init
+    const victoryAgainBtn = document.getElementById('victory-again');
+    if (victoryAgainBtn) {
+        victoryAgainBtn.addEventListener('click', () => {
+            hideVictory();
+            onRestart();
+        });
+    }
+    const victoryMenuBtn = document.getElementById('victory-menu');
+    if (victoryMenuBtn) {
+        victoryMenuBtn.addEventListener('click', () => {
+            hideVictory();
+            showMenu();
+        });
+    }
+
     loadScores(scoreListEl);
 }
 
@@ -72,6 +87,7 @@ export function showMenu() {
     menuEl.style.display = 'flex';
     gameOverEl.style.display = 'none';
     pauseEl.style.display = 'none';
+    if (victoryEl) victoryEl.style.display = 'none';
     loadScores(scoreListEl);
 }
 
@@ -89,6 +105,25 @@ export function showGameOver(score, kills, timeStr) {
 
 export function hideGameOver() {
     gameOverEl.style.display = 'none';
+}
+
+export function showVictory(data) {
+    if (!victoryEl) return;
+    victoryEl.style.display = 'flex';
+    const scoreEl = document.getElementById('victory-score');
+    const coinsEl = document.getElementById('victory-coins');
+    const bonusEl = document.getElementById('victory-bonus');
+    const starsEl = document.getElementById('victory-stars');
+    if (scoreEl) scoreEl.textContent = data.score;
+    if (coinsEl) coinsEl.textContent = data.coins;
+    if (bonusEl) bonusEl.textContent = data.bonus;
+    if (starsEl) {
+        starsEl.textContent = '★'.repeat(data.stars) + '☆'.repeat(3 - data.stars);
+    }
+}
+
+export function hideVictory() {
+    if (victoryEl) victoryEl.style.display = 'none';
 }
 
 export function showPause() {

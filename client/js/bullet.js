@@ -8,7 +8,7 @@ export function moveBullets(bullets, dt, mode, camera) {
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        if (mode === GAME_MODE.ADVENTURE) {
+        if (mode === GAME_MODE.ADVENTURE || mode === GAME_MODE.STORY) {
             // Adventure: despawn bullets off-camera
             if (b.x < camera.x - BUFFER || b.x > camera.x + CANVAS_WIDTH + BUFFER ||
                 b.y < camera.y - BUFFER || b.y > camera.y + CANVAS_HEIGHT + BUFFER) {
