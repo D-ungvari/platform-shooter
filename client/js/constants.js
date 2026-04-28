@@ -29,6 +29,7 @@ export const COYOTE_TIME = 0.1;
 export const JUMP_BUFFER_TIME = 0.12;
 export const VAR_JUMP_CUT = 0.45;
 export const STOMP_BOUNCE = 380;
+export const BOUNCE_FORCE_MULT = 1.5;
 export const GROUND_POUND_VEL = 900;
 export const GROUND_POUND_RADIUS = 80;
 export const STAR_DURATION = 9.0;
