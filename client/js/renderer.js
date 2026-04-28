@@ -75,8 +75,9 @@ export function renderGame(player, enemies, bullets, score, dt, killCount, survi
         drawStoryWorld(storyData, cam);
     }
 
-    // Enemies
+    // Enemies (skip hidden piranhas)
     for (const e of enemies) {
+        if (e.type === 'piranha' && e.phase === 'hidden') continue;
         drawEnemy(e);
     }
 
@@ -245,7 +246,7 @@ function drawCloudShape(x, y, s) {
 
 // === STORY WORLD DRAW ===
 function drawStoryWorld(storyData, cam) {
-    const { decoTiles, pipeTiles, qBlocks, coins, flag, castle, hazards, movingPlatforms, crumbleTilesList } = storyData;
+    const { decoTiles, pipeTiles, qBlocks, coins, flag, castle, hazards, movingPlatforms, crumbleTilesList, bricks } = storyData;
     const camLeft = cam.x - 32;
     const camRight = cam.x + CANVAS_WIDTH + 32;
 
@@ -265,7 +266,17 @@ function drawStoryWorld(storyData, cam) {
         if (t.x < camLeft - 64 || t.x > camRight + 64) continue;
         if (t.type === 'ground') drawGroundTile(t.x, t.y, t.isTop);
         else if (t.type === 'stone') drawStoneTile(t.x, t.y);
-        else if (t.type === 'brick') drawBrickTile(t.x, t.y);
+        // brick deco skipped — bricks rendered from bricks array below
+    }
+
+    // Breakable bricks (with bump + broken state)
+    if (bricks) {
+        for (const b of bricks) {
+            if (b.broken) continue;
+            if (b.x + b.width < camLeft || b.x > camRight) continue;
+            const bumpY = b.bumpT > 0 ? -Math.sin(b.bumpT * Math.PI / 0.25) * 8 : 0;
+            drawBrickTile(b.x, b.y + bumpY);
+        }
     }
 
     // Pipes
@@ -743,6 +754,10 @@ function drawEnemy(e) {
         drawParatroopa(e, cx, cy);
     } else if (e.type === 'tank') {
         drawBowserMini(e, cx, cy);
+    } else if (e.type === 'koopa') {
+        drawKoopa(e, cx, cy);
+    } else if (e.type === 'piranha') {
+        drawPiranha(e, cx, cy);
     }
 
     // Hit flash overlay
@@ -988,7 +1003,107 @@ function drawBowserMini(e, cx, cy) {
     ctx.fillRect(cx + 3 + facing * 4, top + 16 + bob, 2, 3);
 }
 
-// === PLAYER (Mario) ===
+function drawKoopa(e, cx, cy) {
+    const top = e.y;
+    const facing = e.vx >= 0 ? 1 : -1;
+    if (e.shellState === 'shell' || e.shellState === 'sliding') {
+        // Just shell on ground
+        const shellY = top + e.height - 24;
+        const spin = e.shellState === 'sliding' ? gameTime * 16 : 0;
+        ctx.save();
+        ctx.translate(cx, shellY + 12);
+        ctx.rotate(spin);
+        ctx.fillStyle = '#00A800';
+        ctx.beginPath();
+        ctx.arc(0, 0, 12, Math.PI, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillRect(-12, 0, 24, 8);
+        ctx.fillStyle = '#005800';
+        ctx.fillRect(-12, 6, 24, 2);
+        // Shell rim (yellow)
+        ctx.fillStyle = '#FFE890';
+        ctx.fillRect(-12, 8, 24, 2);
+        // Pattern hexagons
+        ctx.fillStyle = '#80F800';
+        ctx.fillRect(-6, -6, 4, 4);
+        ctx.fillRect(2, -8, 4, 4);
+        ctx.fillRect(-2, -2, 4, 4);
+        ctx.restore();
+        return;
+    }
+    // Walking
+    const walkPhase = Math.floor(gameTime * 6) % 2;
+    // Feet
+    ctx.fillStyle = '#F8B070';
+    if (walkPhase === 0) {
+        ctx.fillRect(cx - 10, top + e.height - 4, 6, 4);
+        ctx.fillRect(cx + 4, top + e.height - 4, 6, 4);
+    } else {
+        ctx.fillRect(cx - 12, top + e.height - 4, 6, 4);
+        ctx.fillRect(cx + 6, top + e.height - 4, 6, 4);
+    }
+    // Shell on back
+    ctx.fillStyle = '#00A800';
+    ctx.beginPath();
+    ctx.arc(cx, top + 12, 12, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(cx - 12, top + 12, 24, 14);
+    ctx.fillStyle = '#FFE890';
+    ctx.fillRect(cx - 12, top + 24, 24, 2);
+    ctx.fillStyle = '#80F800';
+    ctx.fillRect(cx - 6, top + 6, 4, 4);
+    ctx.fillRect(cx + 2, top + 4, 4, 4);
+    // Head (yellow)
+    ctx.fillStyle = '#F8D830';
+    ctx.fillRect(cx - 6 + facing * 2, top + 14, 12, 10);
+    ctx.fillStyle = '#A88800';
+    ctx.fillRect(cx - 6 + facing * 2, top + 22, 12, 2);
+    // Eyes
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(cx - 4 + facing * 2, top + 16, 4, 4);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(cx - 3 + facing * 3, top + 17, 2, 3);
+    // Beak
+    ctx.fillStyle = '#F8B070';
+    ctx.fillRect(cx + (facing === 1 ? 4 : -8), top + 20, 4, 2);
+}
+
+function drawPiranha(e, cx, cy) {
+    const top = e.y;
+    const w = e.width;
+    const h = e.height;
+    // Stem
+    ctx.fillStyle = '#00A800';
+    ctx.fillRect(cx - 3, top + h * 0.5, 6, h * 0.5);
+    // Head body (red w/ white spots)
+    ctx.fillStyle = '#E8281C';
+    ctx.beginPath();
+    ctx.arc(cx, top + h * 0.32, h * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    // Spots
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(cx - 6, top + 4, 3, 3);
+    ctx.fillRect(cx + 4, top + 8, 3, 3);
+    ctx.fillRect(cx - 2, top + 12, 3, 3);
+    // Mouth open
+    const open = (Math.sin(gameTime * 6) + 1) / 2;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(cx - 8, top + h * 0.36, 16, 2 + open * 6);
+    // Teeth
+    ctx.fillStyle = '#FFFFFF';
+    for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 7 + i * 4, top + h * 0.36);
+        ctx.lineTo(cx - 5 + i * 4, top + h * 0.36 + 4);
+        ctx.lineTo(cx - 3 + i * 4, top + h * 0.36);
+        ctx.closePath();
+        ctx.fill();
+    }
+}
+
+// === PLAYER (Davio) ===
 function drawPlayer(player, isWorldSpace, cam) {
     ctx.save();
 
@@ -1001,6 +1116,10 @@ function drawPlayer(player, isWorldSpace, cam) {
     const isMoving = Math.abs(player.vx) > 10;
     const isAirborne = !player.grounded;
     const runFrame = player.runFrame || 0;
+    const powerLevel = player.powerLevel || 0;
+    const crouching = !!player.crouching;
+    const groundPounding = !!player.groundPounding;
+    const skidding = !!player.skidding;
 
     // Squash/stretch
     const sx = player.squashX || 1;
@@ -1011,46 +1130,35 @@ function drawPlayer(player, isWorldSpace, cam) {
     const h = player.height * sy;
     const ox = baseX + (player.width - w) / 2;
     const oy = baseY + (player.height - h);
-
-    // Aim angle for gun
-    const mouse = isWorldSpace ? getWorldMouse(cam) : getMouse();
     const cxw = baseX + player.width / 2;
     const cyw = baseY + player.height / 2;
-    const dx = mouse.x - cxw;
-    const dy = mouse.y - cyw;
-    const aimAngle = Math.atan2(dy, dx);
 
-    drawMario(ox, oy, w, h, facing, isAirborne, isMoving, runFrame, aimAngle, cxw, cyw);
+    // Star power: cycle palette rapidly
+    const starActive = (player.starTimer || 0) > 0;
+    if (starActive) {
+        const palettes = [
+            ['#E8281C', '#0058F8'],
+            ['#F8B800', '#00A800'],
+            ['#FFFFFF', '#E8281C'],
+            ['#0058F8', '#F8B800'],
+        ];
+        const idx = Math.floor(gameTime * 24) % palettes.length;
+        drawDavio(ox, oy, w, h, facing, isAirborne, isMoving, runFrame, powerLevel, crouching, groundPounding, skidding, palettes[idx][0], palettes[idx][1]);
+    } else {
+        drawDavio(ox, oy, w, h, facing, isAirborne, isMoving, runFrame, powerLevel, crouching, groundPounding, skidding);
+    }
 
     ctx.globalAlpha = 1.0;
 
-    // Power-up effects
-    if (player.activePowerUps) {
-        if (player.activePowerUps.speed > 0 && Math.abs(player.vx) > 10) {
-            const dir = player.facingRight ? -1 : 1;
-            for (let t = 1; t <= 3; t++) {
-                ctx.globalAlpha = 0.18 / t;
-                ctx.fillStyle = '#FFFF44';
-                ctx.fillRect(cxw + dir * t * 10 - 4, cyw - 10, 8, 20);
-            }
-            ctx.globalAlpha = 1.0;
-        }
-        if (player.shieldHits > 0) {
-            // Star sparkle ring
-            const r = Math.max(player.width, player.height) * 0.7;
-            for (let i = 0; i < 6; i++) {
-                const a = gameTime * 4 + i * Math.PI / 3;
-                const sxx = cxw + Math.cos(a) * r;
-                const syy = cyw + Math.sin(a) * r;
-                ctx.fillStyle = (Math.floor(gameTime * 8 + i) % 2 === 0) ? '#FFE830' : '#FFFFFF';
-                drawStar(sxx, syy, 5, 6);
-            }
-        }
-        if (player.activePowerUps.giant > 0) {
-            ctx.globalAlpha = 0.15;
-            ctx.fillStyle = '#FF8844';
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-            ctx.globalAlpha = 1.0;
+    if (starActive) {
+        // Sparkle trail
+        for (let i = 0; i < 4; i++) {
+            const a = gameTime * 6 + i * Math.PI / 2;
+            const r = Math.max(player.width, player.height) * 0.6;
+            const sxx = cxw + Math.cos(a) * r;
+            const syy = cyw + Math.sin(a) * r;
+            ctx.fillStyle = (Math.floor(gameTime * 16 + i) % 2 === 0) ? '#FFE830' : '#FFFFFF';
+            drawStar(sxx, syy, 4, 5);
         }
     }
 
@@ -1071,17 +1179,92 @@ function drawStar(x, y, r, points) {
     ctx.fill();
 }
 
-// Mario sprite (chunky pixel-art)
-function drawMario(x, y, w, h, facing, airborne, moving, runFrame, aimAngle, cxw, cyw) {
-    // Scale 1px = w/14 roughly. Use fractions of w/h for layout.
+// Davio sprite (chunky pixel-art) — 3 power tiers
+function drawDavio(x, y, w, h, facing, airborne, moving, runFrame, powerLevel, crouching, groundPounding, skidding, capOverride, shirtOverride) {
+    if (powerLevel === 0) {
+        drawSmallDavio(x, y, w, h, facing, airborne, moving, runFrame, capOverride);
+        return;
+    }
+    drawSuperDavio(x, y, w, h, facing, airborne, moving, runFrame, powerLevel, crouching, groundPounding, skidding, capOverride, shirtOverride);
+}
+
+function drawSmallDavio(x, y, w, h, facing, airborne, moving, runFrame, capOverride) {
     const cx = x + w / 2;
     const top = y;
     const skin = '#F8B070';
     const skinDark = '#C84C0C';
-    const red = '#E8281C';
-    const redDark = '#A0140C';
+    const red = capOverride || '#E8281C';
     const blue = '#0058F8';
-    const blueDark = '#003078';
+    const brown = '#7C2810';
+    const white = '#FFFFFF';
+    const yellow = '#F8B800';
+
+    // Cap
+    ctx.fillStyle = red;
+    ctx.fillRect(cx - w * 0.42, top + h * 0.05, w * 0.84, h * 0.22);
+    if (facing === 1) {
+        ctx.fillRect(cx - w * 0.10, top + h * 0.22, w * 0.50, h * 0.10);
+    } else {
+        ctx.fillRect(cx - w * 0.40, top + h * 0.22, w * 0.50, h * 0.10);
+    }
+    // "D" emblem
+    ctx.fillStyle = white;
+    ctx.fillRect(cx - w * 0.10, top + h * 0.10, w * 0.20, h * 0.10);
+    ctx.fillStyle = red;
+    ctx.fillRect(cx - w * 0.04, top + h * 0.13, w * 0.10, h * 0.04);
+    // Sideburns
+    ctx.fillStyle = brown;
+    ctx.fillRect(cx - w * 0.42, top + h * 0.27, w * 0.10, h * 0.12);
+    ctx.fillRect(cx + w * 0.32, top + h * 0.27, w * 0.10, h * 0.12);
+    // Face
+    ctx.fillStyle = skin;
+    ctx.fillRect(cx - w * 0.32, top + h * 0.27, w * 0.64, h * 0.20);
+    // Eye
+    ctx.fillStyle = white;
+    const eyeX = cx + (facing === 1 ? w * 0.06 : -w * 0.16);
+    ctx.fillRect(eyeX, top + h * 0.30, w * 0.10, h * 0.10);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(eyeX + (facing === 1 ? w * 0.04 : 0), top + h * 0.32, w * 0.04, h * 0.06);
+    // Mustache
+    ctx.fillStyle = brown;
+    ctx.fillRect(cx - w * 0.20, top + h * 0.40, w * 0.40, h * 0.06);
+    // Body (overalls — short)
+    ctx.fillStyle = blue;
+    ctx.fillRect(cx - w * 0.30, top + h * 0.50, w * 0.60, h * 0.32);
+    // Buttons
+    ctx.fillStyle = yellow;
+    ctx.fillRect(cx - w * 0.18, top + h * 0.58, w * 0.06, h * 0.06);
+    ctx.fillRect(cx + w * 0.12, top + h * 0.58, w * 0.06, h * 0.06);
+    // Hands
+    ctx.fillStyle = white;
+    ctx.fillRect(cx - w * 0.42, top + h * 0.58, w * 0.12, h * 0.10);
+    ctx.fillRect(cx + w * 0.30, top + h * 0.58, w * 0.12, h * 0.10);
+    // Boots
+    ctx.fillStyle = brown;
+    if (airborne || !moving) {
+        ctx.fillRect(cx - w * 0.30, top + h * 0.82, w * 0.26, h * 0.18);
+        ctx.fillRect(cx + w * 0.04, top + h * 0.82, w * 0.26, h * 0.18);
+    } else {
+        const offsets = [{ l: 0, r: 0 }, { l: 0.05, r: -0.05 }, { l: 0, r: 0 }, { l: -0.05, r: 0.05 }];
+        const o = offsets[runFrame];
+        ctx.fillRect(cx - w * 0.30 + w * o.l, top + h * 0.82, w * 0.26, h * 0.18);
+        ctx.fillRect(cx + w * 0.04 + w * o.r, top + h * 0.82, w * 0.26, h * 0.18);
+    }
+}
+
+function drawSuperDavio(x, y, w, h, facing, airborne, moving, runFrame, powerLevel, crouching, groundPounding, skidding, capOverride, shirtOverride) {
+    const cx = x + w / 2;
+    const top = y;
+    const skin = '#F8B070';
+    const skinDark = '#C84C0C';
+    // Fire-Davio: white cap, red shirt + white overalls
+    const isFire = powerLevel === 2;
+    const red = capOverride || (isFire ? '#FFFFFF' : '#E8281C');
+    const redDark = isFire ? '#C8C8C8' : '#A0140C';
+    const blue = shirtOverride || (isFire ? '#FFFFFF' : '#0058F8');
+    const blueDark = isFire ? '#A8A8A8' : '#003078';
+    const shirt = isFire ? '#E8281C' : '#E8281C';
+    const shirtDark = isFire ? '#A0140C' : '#A0140C';
     const brown = '#7C2810';
     const yellow = '#F8B800';
     const white = '#FFFFFF';
@@ -1134,12 +1317,12 @@ function drawMario(x, y, w, h, facing, airborne, moving, runFrame, aimAngle, cxw
     ctx.fillStyle = skinDark;
     ctx.fillRect(cx + (facing === 1 ? w * 0.10 : -w * 0.20), top + h * 0.28, w * 0.10, h * 0.06);
 
-    // Body — overalls (blue) over red shirt
-    // Red shirt sleeves
-    ctx.fillStyle = red;
+    // Body — overalls over shirt
+    // Shirt sleeves
+    ctx.fillStyle = shirt;
     ctx.fillRect(cx - w * 0.42, top + h * 0.40, w * 0.20, h * 0.20);
     ctx.fillRect(cx + w * 0.22, top + h * 0.40, w * 0.20, h * 0.20);
-    ctx.fillStyle = redDark;
+    ctx.fillStyle = shirtDark;
     ctx.fillRect(cx - w * 0.42, top + h * 0.55, w * 0.20, h * 0.05);
     ctx.fillRect(cx + w * 0.22, top + h * 0.55, w * 0.20, h * 0.05);
 
@@ -1197,17 +1380,6 @@ function drawMario(x, y, w, h, facing, airborne, moving, runFrame, aimAngle, cxw
         ctx.fillRect(cx + w * 0.04, top + h * 0.90, w * 0.26, h * 0.10);
     }
 
-    // Gun arm (small fire stick)
-    ctx.save();
-    ctx.translate(cxw, cyw);
-    ctx.rotate(aimAngle);
-    ctx.fillStyle = white;
-    ctx.fillRect(0, -3, 12, 6);
-    ctx.fillStyle = red;
-    ctx.fillRect(10, -4, 12, 8);
-    ctx.fillStyle = yellow;
-    ctx.fillRect(20, -2, 6, 4);
-    ctx.restore();
 }
 
 // === STORY HUD (Mario-style top bar) ===
@@ -1221,9 +1393,9 @@ function drawStoryHUD(storyData, score, killCount, player) {
     ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'left';
 
-    // MARIO × 3
+    // DAVIO × 3
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('MARIO', 14, 14);
+    ctx.fillText('DAVIO', 14, 14);
     ctx.fillStyle = '#FFE890';
     ctx.font = 'bold 18px monospace';
     ctx.fillText(String(score).padStart(6, '0'), 14, 30);
@@ -1258,25 +1430,19 @@ function drawStoryHUD(storyData, score, killCount, player) {
     ctx.fillText('×' + lives, 96, 14);
     drawTinyMario(80, 6);
 
-    // HP bar lower-left
+    // Power-up indicator (lower-left)
     if (player) {
-        const hpBarW = 140;
-        const hpBarH = 10;
-        const hpBarX = 14;
-        const hpBarY = CANVAS_HEIGHT - 22;
-        const ratio = Math.max(0, player.health / player.maxHealth);
-        ctx.fillStyle = '#222';
-        ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
-        const r = Math.floor(255 * (1 - ratio));
-        const g = Math.floor(200 * ratio);
-        ctx.fillStyle = `rgb(${r}, ${g}, 50)`;
-        if (ratio > 0) ctx.fillRect(hpBarX + 1, hpBarY + 1, (hpBarW - 2) * ratio, hpBarH - 2);
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(hpBarX, hpBarY, hpBarW, hpBarH);
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText('HP', hpBarX, hpBarY - 2);
+        ctx.font = 'bold 12px monospace';
+        const labels = ['SMALL', 'SUPER', 'FIRE'];
+        const colors = ['#FFFFFF', '#80F8FF', '#FF8000'];
+        const lbl = labels[player.powerLevel || 0];
+        ctx.fillStyle = colors[player.powerLevel || 0];
+        ctx.fillText(lbl, 14, CANVAS_HEIGHT - 12);
+        if (player.starTimer > 0) {
+            ctx.fillStyle = '#FFE830';
+            ctx.fillText('★ STAR ' + Math.ceil(player.starTimer) + 's', 80, CANVAS_HEIGHT - 12);
+        }
     }
 }
 
@@ -1291,7 +1457,7 @@ function drawHUDCoin(x, y) {
 }
 
 function drawTinyMario(x, y) {
-    // Tiny mario icon for life count
+    // Tiny davio icon for life count
     ctx.fillStyle = '#E8281C';
     ctx.fillRect(x, y, 8, 3);
     ctx.fillRect(x + 2, y - 2, 4, 2);

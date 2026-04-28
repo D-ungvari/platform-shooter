@@ -1,38 +1,29 @@
 import {
-    PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_SPEED, JUMP_FORCE,
-    PLAYER_MAX_HEALTH, INVINCIBILITY_DURATION, SHOOT_COOLDOWN,
-    BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE,
-    CANVAS_WIDTH, CANVAS_HEIGHT, GAME_MODE,
-    POWERUP_SPEED_MULT, POWERUP_SPEED_DURATION,
-    POWERUP_JUMP_MULT, POWERUP_JUMP_DURATION,
-    POWERUP_DOUBLE_SPREAD, POWERUP_DOUBLE_DURATION,
-    POWERUP_SHIELD_HITS,
-    POWERUP_GIANT_SCALE, POWERUP_GIANT_DAMAGE_MULT, POWERUP_GIANT_DURATION,
+    PLAYER_WIDTH, PLAYER_HEIGHT_SMALL, PLAYER_HEIGHT_SUPER,
+    PLAYER_WALK_SPEED, PLAYER_RUN_SPEED, PLAYER_ACCEL, PLAYER_DECEL, PLAYER_AIR_ACCEL,
+    JUMP_FORCE, JUMP_FORCE_BONUS_PER_SPEED,
+    PLAYER_MAX_HEALTH, INVINCIBILITY_DURATION,
+    FIREBALL_SPEED, FIREBALL_RADIUS, FIREBALL_COOLDOWN, FIREBALL_LIFE,
+    POWER_SMALL, POWER_SUPER, POWER_FIRE, STAR_DURATION,
+    GROUND_POUND_VEL,
     COYOTE_TIME, JUMP_BUFFER_TIME, VAR_JUMP_CUT
 } from './constants.js';
 import {
     isKeyDown, getMouse, getWorldMouse,
-    isJumpDown, jumpPressedThisFrame, jumpReleasedThisFrame
+    jumpPressedThisFrame, jumpReleasedThisFrame,
+    isRunDown, isCrouchDown, crouchPressedThisFrame, isFirePressed
 } from './input.js';
 import { applyGravity, resolvePlatformCollisions } from './physics.js';
-import { playShoot, playJump } from './audio.js';
+import { playJump, playFireball } from './audio.js';
 import { triggerMuzzleFlash } from './renderer.js';
-
-const POWERUP_DURATIONS = {
-    speed: POWERUP_SPEED_DURATION,
-    superJump: POWERUP_JUMP_DURATION,
-    doubleShot: POWERUP_DOUBLE_DURATION,
-    giant: POWERUP_GIANT_DURATION,
-};
 
 export function createPlayer(mode) {
     return {
         x: 96,
         y: 200,
         width: PLAYER_WIDTH,
-        height: PLAYER_HEIGHT,
+        height: PLAYER_HEIGHT_SMALL,
         baseWidth: PLAYER_WIDTH,
-        baseHeight: PLAYER_HEIGHT,
         vx: 0,
         vy: 0,
         health: PLAYER_MAX_HEALTH,
@@ -42,95 +33,180 @@ export function createPlayer(mode) {
         facingRight: true,
         invincible: 0,
         shootCooldown: 0,
-        weapon: 'normal',
-        weaponTimer: 0,
-        activePowerUps: {},
-        shieldHits: 0,
+        powerLevel: POWER_SMALL,
+        starTimer: 0,
+        crouching: false,
+        groundPounding: false,
+        groundPoundLanded: 0,
         coyoteTimer: 0,
         jumpBuffer: 0,
         jumpHeld: false,
-        squashY: 1,    // squash/stretch Y scale
+        squashY: 1,
         squashX: 1,
         runFrame: 0,
         animTime: 0,
+        growTimer: 0, // freeze input during grow/shrink
+        flashSwap: 0,
+        ridingPlatform: null,
+        headBonk: null,
     };
 }
 
-export function hasPowerUp(player, type) {
-    return (player.activePowerUps[type] || 0) > 0;
-}
-
-export function applyPowerUp(player, type) {
-    if (type === 'shield') {
-        player.shieldHits = POWERUP_SHIELD_HITS;
-        player.activePowerUps.shield = 999;
+// Set hitbox based on power level (small vs super-tier)
+function applyHitboxForPower(player) {
+    const targetH = player.powerLevel === POWER_SMALL ? PLAYER_HEIGHT_SMALL : PLAYER_HEIGHT_SUPER;
+    if (player.crouching && player.powerLevel !== POWER_SMALL) {
+        const crouchH = PLAYER_HEIGHT_SUPER - 12;
+        const diff = player.height - crouchH;
+        player.height = crouchH;
+        player.y += diff;
         return;
     }
-    const dur = POWERUP_DURATIONS[type];
-    if (dur) {
-        player.activePowerUps[type] = dur;
-    }
-    if (type === 'giant' && player.width === player.baseWidth) {
-        const oldH = player.height;
-        player.width = Math.round(player.baseWidth * POWERUP_GIANT_SCALE);
-        player.height = Math.round(player.baseHeight * POWERUP_GIANT_SCALE);
-        player.x -= (player.width - player.baseWidth) / 2;
-        player.y -= (player.height - oldH);
+    const diff = player.height - targetH;
+    if (diff !== 0) {
+        player.height = targetH;
+        player.y += diff;
     }
 }
 
-function updatePowerUps(player, dt) {
-    for (const type in player.activePowerUps) {
-        if (type === 'shield') {
-            if (player.shieldHits <= 0) {
-                delete player.activePowerUps.shield;
-            }
-            continue;
+// Promote one tier (small→super→fire). Returns the level reached.
+export function promotePower(player, target) {
+    const before = player.powerLevel;
+    if (target === 'mushroom') {
+        if (player.powerLevel === POWER_SMALL) {
+            player.powerLevel = POWER_SUPER;
+            player.growTimer = 0.4;
+        } else {
+            // Already super or fire — score bump only
         }
-        player.activePowerUps[type] -= dt;
-        if (player.activePowerUps[type] <= 0) {
-            delete player.activePowerUps[type];
-            if (type === 'giant' && player.width !== player.baseWidth) {
-                const oldH = player.height;
-                player.width = player.baseWidth;
-                player.height = player.baseHeight;
-                player.y += (oldH - player.height);
-            }
+    } else if (target === 'fireflower') {
+        player.powerLevel = POWER_FIRE;
+        player.growTimer = 0.4;
+    } else if (target === 'star') {
+        player.starTimer = STAR_DURATION;
+    }
+    if (player.powerLevel !== before) {
+        // Resize hitbox upward (push player up so feet stay)
+        const newH = PLAYER_HEIGHT_SUPER;
+        const oldH = player.height;
+        if (newH > oldH) {
+            player.height = newH;
+            player.y -= (newH - oldH);
         }
+    }
+    return player.powerLevel;
+}
+
+// Demote one tier on hit. Fire→Super→Small→death.
+// Returns true if the hit kills (was small).
+export function demoteOnHit(player) {
+    if (player.invincible > 0 || player.starTimer > 0) return false;
+    if (player.powerLevel === POWER_FIRE) {
+        player.powerLevel = POWER_SUPER;
+        player.invincible = INVINCIBILITY_DURATION;
+        return false;
+    }
+    if (player.powerLevel === POWER_SUPER) {
+        player.powerLevel = POWER_SMALL;
+        const oldH = player.height;
+        const newH = PLAYER_HEIGHT_SMALL;
+        player.height = newH;
+        player.y += (oldH - newH);
+        player.invincible = INVINCIBILITY_DURATION;
+        return false;
+    }
+    // Small Davio: kill
+    player.health = 0;
+    return true;
+}
+
+export function hasPowerUp(player, type) {
+    if (type === 'shield' || type === 'star') return player.starTimer > 0;
+    return false;
+}
+
+// Legacy entry points used by game.js pickup loop
+export function applyPowerUp(player, type) {
+    if (type === 'star' || type === 'shield') {
+        promotePower(player, 'star');
+    } else if (type === 'giant') {
+        promotePower(player, 'mushroom');
+    }
+}
+
+export function giveWeapon(player, type, _duration) {
+    if (type === 'rapid' || type === 'fireflower') {
+        promotePower(player, 'fireflower');
     }
 }
 
 export function updatePlayer(player, dt, bullets, mode, camera, platforms) {
-    const speedMult = hasPowerUp(player, 'speed') ? POWERUP_SPEED_MULT : 1;
-    if (isKeyDown('a') || isKeyDown('arrowleft')) {
-        player.vx = -PLAYER_SPEED * speedMult;
-    } else if (isKeyDown('d') || isKeyDown('arrowright')) {
-        player.vx = PLAYER_SPEED * speedMult;
-    } else {
+    if (player.starTimer > 0) player.starTimer -= dt;
+    if (player.growTimer > 0) {
+        player.growTimer -= dt;
+        // Brief flash + freeze horizontal input
         player.vx = 0;
+        applyGravity(player, dt);
+        player.y += player.vy * dt;
+        resolvePlatformCollisions(player, platforms);
+        return;
     }
 
-    // === JUMP: coyote + buffer + variable height ===
+    const isSuperTier = player.powerLevel !== POWER_SMALL;
+
+    // === HORIZONTAL: walk/run with accel ===
+    const running = isRunDown();
+    const maxSpeed = running ? PLAYER_RUN_SPEED : PLAYER_WALK_SPEED;
+    let inputDir = 0;
+    if (isKeyDown('a') || isKeyDown('arrowleft')) inputDir = -1;
+    else if (isKeyDown('d') || isKeyDown('arrowright')) inputDir = 1;
+
+    // Crouch suppresses horizontal input on ground for super
+    const wantsCrouch = isCrouchDown() && isSuperTier && player.grounded;
+    if (wantsCrouch) inputDir = 0;
+    if (player.crouching !== wantsCrouch) {
+        player.crouching = wantsCrouch;
+        applyHitboxForPower(player);
+    }
+
+    const accel = player.grounded ? PLAYER_ACCEL : PLAYER_AIR_ACCEL;
+    if (inputDir !== 0) {
+        const target = inputDir * maxSpeed;
+        if (Math.sign(player.vx) !== inputDir && Math.abs(player.vx) > 30) {
+            // skidding (reverse) — apply heavy decel
+            player.vx += inputDir * PLAYER_DECEL * dt;
+            player.skidding = player.grounded;
+        } else {
+            player.vx += inputDir * accel * dt;
+            if (Math.abs(player.vx) > maxSpeed) player.vx = Math.sign(player.vx) * maxSpeed;
+            player.skidding = false;
+        }
+    } else if (player.grounded) {
+        // Decel toward 0
+        const dec = PLAYER_DECEL * dt;
+        if (Math.abs(player.vx) <= dec) player.vx = 0;
+        else player.vx -= Math.sign(player.vx) * dec;
+        player.skidding = false;
+    }
+
+    // === JUMP: coyote + buffer + variable + speed bonus ===
     player.wasGrounded = player.grounded;
 
-    // Update coyote timer (decay when off ground)
     if (player.grounded) {
         player.coyoteTimer = COYOTE_TIME;
     } else {
         player.coyoteTimer -= dt;
     }
 
-    // Update jump buffer
     if (jumpPressedThisFrame()) {
         player.jumpBuffer = JUMP_BUFFER_TIME;
     } else {
         player.jumpBuffer -= dt;
     }
 
-    // Trigger jump if buffer + coyote both fresh
-    if (player.jumpBuffer > 0 && player.coyoteTimer > 0) {
-        const jumpMult = hasPowerUp(player, 'superJump') ? POWERUP_JUMP_MULT : 1;
-        player.vy = -JUMP_FORCE * jumpMult;
+    if (player.jumpBuffer > 0 && player.coyoteTimer > 0 && !player.groundPounding) {
+        const speedBonus = Math.abs(player.vx) * JUMP_FORCE_BONUS_PER_SPEED;
+        player.vy = -(JUMP_FORCE + speedBonus);
         player.grounded = false;
         player.coyoteTimer = 0;
         player.jumpBuffer = 0;
@@ -139,9 +215,21 @@ export function updatePlayer(player, dt, bullets, mode, camera, platforms) {
         playJump();
     }
 
-    // Variable jump: release jump early → cut upward velocity
     if (jumpReleasedThisFrame() && player.vy < 0) {
         player.vy *= VAR_JUMP_CUT;
+    }
+
+    // === GROUND POUND: down-press while airborne, super+ only ===
+    if (!player.grounded && isSuperTier && crouchPressedThisFrame() && !player.groundPounding) {
+        player.groundPounding = true;
+        player.vx = 0;
+        player.vy = GROUND_POUND_VEL;
+    }
+    if (player.groundPounding && player.grounded) {
+        player.groundPounding = false;
+        player.groundPoundLanded = 1.0; // signal flag for game.js
+        player.squashY = 0.7;
+        player.squashX = 1.3;
     }
 
     // Gravity
@@ -159,7 +247,6 @@ export function updatePlayer(player, dt, bullets, mode, camera, platforms) {
         player.squashX = 0.85;
     }
 
-    // Squash recovery
     player.squashY += (1 - player.squashY) * Math.min(1, dt * 14);
     player.squashX += (1 - player.squashX) * Math.min(1, dt * 14);
 
@@ -167,107 +254,52 @@ export function updatePlayer(player, dt, bullets, mode, camera, platforms) {
 
     const mouse = getWorldMouse(camera);
     const cx = player.x + player.width / 2;
-    player.facingRight = mouse.x >= cx;
+    if (Math.abs(player.vx) > 20) player.facingRight = player.vx > 0;
+    else player.facingRight = mouse.x >= cx;
 
-    if (player.weaponTimer > 0) {
-        player.weaponTimer -= dt;
-        if (player.weaponTimer <= 0) {
-            player.weapon = 'normal';
-        }
-    }
-
-    const screenMouse = getMouse();
-    const cooldown = player.weapon === 'rapid' ? SHOOT_COOLDOWN * 0.4 : SHOOT_COOLDOWN;
+    // === FIRE FIREBALL (POWER_FIRE only) ===
     player.shootCooldown -= dt;
-    if ((screenMouse.clicked || screenMouse.down) && player.shootCooldown <= 0) {
-        fireBullet(player, mouse, bullets);
-        player.shootCooldown = cooldown;
-        playShoot();
+    const screenMouse = getMouse();
+    if (player.powerLevel === POWER_FIRE && player.shootCooldown <= 0 &&
+        (screenMouse.clicked || screenMouse.down || isKeyDown('e'))) {
+        fireFireball(player, bullets);
+        player.shootCooldown = FIREBALL_COOLDOWN;
+        playFireball();
         triggerMuzzleFlash();
     }
 
-    if (player.invincible > 0) {
-        player.invincible -= dt;
-    }
+    if (player.invincible > 0) player.invincible -= dt;
+    if (player.groundPoundLanded > 0) player.groundPoundLanded -= dt;
 
-    updatePowerUps(player, dt);
-
-    // Animation timer
+    // Animation
     player.animTime += dt;
     if (player.grounded && Math.abs(player.vx) > 10) {
-        player.runFrame = Math.floor(player.animTime * 12) % 4;
+        const animSpeed = Math.min(20, 6 + Math.abs(player.vx) / 25);
+        player.runFrame = Math.floor(player.animTime * animSpeed) % 4;
     } else {
         player.runFrame = 0;
     }
 }
 
-function fireBullet(player, mouse, bullets) {
+function fireFireball(player, bullets) {
     const cx = player.x + player.width / 2;
-    const cy = player.y + player.height / 2;
-    const dx = mouse.x - cx;
-    const dy = mouse.y - cy;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len === 0) return;
-
-    const nx = dx / len;
-    const ny = dy / len;
-    const dmg = hasPowerUp(player, 'giant') ? BULLET_DAMAGE * POWERUP_GIANT_DAMAGE_MULT : BULLET_DAMAGE;
-
-    if (player.weapon === 'shotgun') {
-        const pellets = hasPowerUp(player, 'doubleShot') ? 7 : 5;
-        const half = Math.floor(pellets / 2);
-        for (let i = -half; i <= half; i++) {
-            const spread = i * 0.12;
-            const cos = Math.cos(spread);
-            const sin = Math.sin(spread);
-            const bx = nx * cos - ny * sin;
-            const by = nx * sin + ny * cos;
-            bullets.push({
-                x: cx, y: cy,
-                vx: bx * BULLET_SPEED * 0.9,
-                vy: by * BULLET_SPEED * 0.9,
-                radius: BULLET_RADIUS * 0.8,
-                damage: dmg,
-            });
-        }
-    } else if (hasPowerUp(player, 'doubleShot')) {
-        for (const dir of [-1, 1]) {
-            const spread = dir * POWERUP_DOUBLE_SPREAD / 2;
-            const cos = Math.cos(spread);
-            const sin = Math.sin(spread);
-            const bx = nx * cos - ny * sin;
-            const by = nx * sin + ny * cos;
-            bullets.push({
-                x: cx, y: cy,
-                vx: bx * BULLET_SPEED,
-                vy: by * BULLET_SPEED,
-                radius: BULLET_RADIUS,
-                damage: dmg,
-            });
-        }
-    } else {
-        bullets.push({
-            x: cx, y: cy,
-            vx: nx * BULLET_SPEED,
-            vy: ny * BULLET_SPEED,
-            radius: BULLET_RADIUS,
-            damage: dmg,
-        });
-    }
+    const cy = player.y + player.height * 0.4;
+    const dir = player.facingRight ? 1 : -1;
+    bullets.push({
+        kind: 'fireball',
+        x: cx + dir * 12,
+        y: cy,
+        vx: dir * FIREBALL_SPEED,
+        vy: 0,
+        radius: FIREBALL_RADIUS,
+        damage: 1,
+        life: FIREBALL_LIFE,
+        bounces: 0,
+        spin: 0,
+    });
 }
 
-export function giveWeapon(player, type, duration) {
-    player.weapon = type;
-    player.weaponTimer = duration;
-}
-
-export function damagePlayer(player, amount) {
-    if (player.invincible > 0) return;
-    if (player.shieldHits > 0) {
-        player.shieldHits--;
-        player.invincible = 0.3;
-        return;
-    }
-    player.health -= amount;
-    player.invincible = INVINCIBILITY_DURATION;
+export function damagePlayer(player, _amount) {
+    // Defer to demoteOnHit — handles all damage now
+    return demoteOnHit(player);
 }

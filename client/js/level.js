@@ -16,6 +16,7 @@ export function loadLevel(levelData) {
     const decoTiles = [];
     const coins = [];
     const blocks = []; // ?-blocks
+    const bricks = []; // breakable B tiles (separate platforms for break support)
     const pipes = [];
     const hazards = []; // spikes, lava, fire bars
     const movingPlatforms = [];
@@ -31,7 +32,7 @@ export function loadLevel(levelData) {
 
     // First pass: collect runs of solid tiles into wider rect platforms.
     // Solid tiles include 'x' (crumble — solid until triggered)
-    const SOLID = new Set(['G', 'B', 'Q', 'q', 'P', 'p', '[', ']', '-', '=', '#', 'x']);
+    const SOLID = new Set(['G', 'Q', 'q', 'P', 'p', '[', ']', '-', '=', '#', 'x']);
     const visited = Array.from({ length: tilesH }, () => new Array(tilesW).fill(false));
 
     for (let r = 0; r < tilesH; r++) {
@@ -77,8 +78,15 @@ export function loadLevel(levelData) {
                 // Star
                 blocks.push({ x, y, width: TILE, height: TILE, type: 'qblock', used: false, contents: 'star', bumpT: 0 });
                 platforms.push({ x, y, width: TILE, height: TILE, type: 'solid', tileType: 'Q' });
+            } else if (t === 'U') {
+                // 1-Up
+                blocks.push({ x, y, width: TILE, height: TILE, type: 'qblock', used: false, contents: 'oneup', bumpT: 0 });
+                platforms.push({ x, y, width: TILE, height: TILE, type: 'solid', tileType: 'Q' });
             } else if (t === 'B') {
-                decoTiles.push({ x, y, width: TILE, height: TILE, type: 'brick' });
+                decoTiles.push({ x, y, width: TILE, height: TILE, type: 'brick', breakable: true });
+                const brick = { x, y, width: TILE, height: TILE, type: 'solid', tileType: 'B', breakable: true, broken: false, bumpT: 0 };
+                bricks.push(brick);
+                platforms.push(brick);
             } else if (t === 'G') {
                 decoTiles.push({ x, y, width: TILE, height: TILE, type: 'ground', isTop: at(c, r - 1) !== 'G' && at(c, r - 1) !== '#' });
             } else if (t === '#') {
@@ -168,6 +176,7 @@ export function loadLevel(levelData) {
         decoTiles,
         coins,
         blocks,
+        bricks,
         pipes,
         hazards,
         movingPlatforms,

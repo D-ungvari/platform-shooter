@@ -3,15 +3,18 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants.js';
 
 initGame();
 
-// Responsive scaling
 function scaleCanvas() {
     const container = document.getElementById('game-container');
-    const maxW = window.innerWidth - 20;
-    const maxH = window.innerHeight - 20;
-    const scale = Math.min(maxW / CANVAS_WIDTH, maxH / CANVAS_HEIGHT, 1);
-    container.style.transform = `scale(${scale})`;
-    container.style.transformOrigin = 'center center';
+    const scale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
+    container.style.transform = `translate(-50%, -50%) scale(${scale})`;
 }
 
 scaleCanvas();
 window.addEventListener('resize', scaleCanvas);
+
+// Click anywhere to enter true fullscreen on first user gesture
+document.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+}, { once: true });

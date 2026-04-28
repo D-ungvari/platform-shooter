@@ -33,6 +33,7 @@ export function spawnScorePopup(x, y, text) {
 }
 
 export function spawnPickup(x, y, type) {
+    const walking = type === 'mushroom' || type === 'health' || type === 'oneup';
     pickups.push({
         x: x - 8,
         y,
@@ -40,8 +41,10 @@ export function spawnPickup(x, y, type) {
         height: 16,
         type,
         healAmount: type === 'health' ? 20 : 0,
-        life: 6.0,
+        life: 12.0,
+        vx: walking ? 60 : 0,
         vy: -100,
+        bounceWalls: type === 'star',
     });
 }
 
@@ -135,6 +138,7 @@ export function updateEffects(dt, platforms) {
         const p = pickups[i];
         p.vy += 600 * dt;
         p.y += p.vy * dt;
+        if (p.vx) p.x += p.vx * dt;
         // Find nearest platform below the pickup
         let landY = 540;
         if (platforms) {
@@ -145,9 +149,21 @@ export function updateEffects(dt, platforms) {
                         landY = platTop;
                     }
                 }
+                // Wall collision: flip vx if hitting side
+                if (p.vx && p.y + p.height > plat.y + 2 && p.y < plat.y + plat.height - 2) {
+                    if (p.vx > 0 && p.x + p.width > plat.x && p.x + p.width < plat.x + 8 && p.x < plat.x) {
+                        p.vx = -p.vx;
+                    } else if (p.vx < 0 && p.x < plat.x + plat.width && p.x > plat.x + plat.width - 8 && p.x + p.width > plat.x + plat.width) {
+                        p.vx = -p.vx;
+                    }
+                }
             }
         }
         if (p.y > landY) { p.y = landY; p.vy = 0; }
+        if (p.bounceWalls && p.vy === 0 && p.y >= landY) {
+            // Star bounces up
+            p.vy = -350;
+        }
         p.life -= dt;
         if (p.life <= 0) pickups.splice(i, 1);
     }
@@ -194,18 +210,18 @@ export function renderWorldEffects(ctx) {
     }
     ctx.globalAlpha = 1.0;
 
-    // Pickups (Mario-style icons)
+    // Pickups (Davio-style icons)
     for (const p of pickups) {
         ctx.globalAlpha = Math.min(p.life, 1.0);
         const cx = p.x + p.width / 2;
         const cy = p.y + p.height / 2;
-        if (p.type === 'health') {
+        if (p.type === 'health' || p.type === 'mushroom') {
             drawMushroom(ctx, p.x, p.y, '#E8281C', '#FFFFFF');
         } else if (p.type === 'oneup') {
             drawMushroom(ctx, p.x, p.y, '#00A800', '#FFFFFF');
-        } else if (p.type === 'rapid') {
+        } else if (p.type === 'rapid' || p.type === 'fireflower') {
             drawFireFlower(ctx, p.x, p.y);
-        } else if (p.type === 'shield' || p.type === 'giant') {
+        } else if (p.type === 'shield' || p.type === 'giant' || p.type === 'star') {
             drawSuperStar(ctx, p.x, p.y);
         } else {
             // Generic pulse box

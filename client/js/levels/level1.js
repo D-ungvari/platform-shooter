@@ -189,26 +189,28 @@ export const LEVEL_1 = {
         // [x in tiles, y in tiles (top), type]
         { tx: 18, ty: 15, type: 'runner' },
         { tx: 27, ty: 15, type: 'runner' },
-        { tx: 38, ty: 15, type: 'runner' },
-        { tx: 48, ty: 15, type: 'runner' },
-        { tx: 49, ty: 15, type: 'runner' },
+        { tx: 38, ty: 14, type: 'piranha' }, // pipe at col 36 — piranha rises from pipe top (row 14, height 2)
+        { tx: 44, ty: 13, type: 'piranha' }, // 3-tall pipe at col 44 (top row 13)
+        { tx: 48, ty: 15, type: 'koopa' },
         { tx: 60, ty: 8, type: 'flyer' },
         { tx: 73, ty: 15, type: 'runner' },
-        { tx: 81, ty: 15, type: 'runner' },
+        { tx: 81, ty: 15, type: 'koopa' },
         { tx: 95, ty: 15, type: 'runner' },
         { tx: 105, ty: 8, type: 'flyer' },
         { tx: 113, ty: 8, type: 'flyer' },
+        { tx: 124, ty: 13, type: 'piranha' }, // pipe col 124 height 3 (top row 13)
         { tx: 127, ty: 15, type: 'runner' },
         { tx: 138, ty: 8, type: 'flyer' },
-        { tx: 148, ty: 15, type: 'tank' },
+        { tx: 148, ty: 15, type: 'koopa' },
         { tx: 156, ty: 15, type: 'runner' },
         { tx: 157, ty: 15, type: 'runner' },
         { tx: 163, ty: 11, type: 'flyer' },
         { tx: 173, ty: 15, type: 'runner' },
+        { tx: 181, ty: 11, type: 'piranha' }, // pipe col 181 height 5 (top row 11)
         { tx: 184, ty: 8, type: 'flyer' },
         { tx: 191, ty: 8, type: 'flyer' },
-        { tx: 200, ty: 15, type: 'runner' },
-        { tx: 201, ty: 15, type: 'runner' },
+        { tx: 200, ty: 15, type: 'koopa' },
+        { tx: 201, ty: 15, type: 'koopa' },
         { tx: 213, ty: 15, type: 'tank' },
         { tx: 224, ty: 15, type: 'runner' },
         { tx: 230, ty: 15, type: 'tank' }, // boss

@@ -1,11 +1,17 @@
 import {
     CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_ENEMY, COLOR_FLYER, COLOR_TANK, COLOR_PLAYER,
     PLAYER_MAX_HEALTH, GAME_MODE,
-    TILE, STORY_LIVES, STORY_TIME_LIMIT, COIN_VALUE, STOMP_BOUNCE
+    TILE, STORY_LIVES, STORY_TIME_LIMIT, COIN_VALUE, STOMP_BOUNCE,
+    POWER_SMALL, POWER_SUPER, POWER_FIRE,
+    KOOPA_SHELL_SPEED, KOOPA_SHELL_REVIVE,
+    STOMP_COMBO_SCORES, COINS_PER_LIFE, GROUND_POUND_RADIUS
 } from './constants.js';
 import { initInput, resetFrameInput, isKeyDown } from './input.js';
 import { initRenderer, renderGame } from './renderer.js';
-import { createPlayer, updatePlayer, damagePlayer, giveWeapon, applyPowerUp, hasPowerUp } from './player.js';
+import {
+    createPlayer, updatePlayer, damagePlayer, demoteOnHit, promotePower,
+    giveWeapon, applyPowerUp, hasPowerUp
+} from './player.js';
 import { moveBullets } from './bullet.js';
 import { createEnemy, updateEnemies } from './enemy.js';
 import { collides } from './physics.js';
@@ -19,7 +25,8 @@ import {
 import {
     playEnemyDeath, playPlayerHit, playPickup, playPlayerDeath, playPowerUp,
     playShieldHit, playCrumble,
-    playStomp, playCoin, playFlag, playCourseClear, playOneUp, playBumpBlock
+    playStomp, playCoin, playFlag, playCourseClear, playOneUp, playBumpBlock,
+    playKick, playBrickBreak
 } from './audio.js';
 import { createCamera, updateCamera, getCamera } from './camera.js';
 import { loadLevel } from './level.js';
@@ -50,7 +57,7 @@ function markCleared(idx) {
 export function getProgress() { return loadSave(); }
 
 const STATE = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', DYING: 'DYING', GAME_OVER: 'GAME_OVER', VICTORY: 'VICTORY' };
-const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK };
+const ENEMY_COLORS = { runner: COLOR_ENEMY, flyer: COLOR_FLYER, tank: COLOR_TANK, koopa: '#00A800', piranha: '#00A800' };
 
 const currentMode = GAME_MODE.STORY;
 
@@ -63,9 +70,8 @@ let killCount = 0;
 let survivalTime = 0;
 let gameTime = 0;
 
-let comboCount = 0;
-let comboTimer = 0;
-const COMBO_WINDOW = 1.5;
+// SMB1-style stomp combo: tracks airborne stomps without touching ground
+let airStompChain = 0;
 
 let deathTimer = 0;
 let flashAlpha = 0;
@@ -78,6 +84,7 @@ let cachedPlatforms = null;
 let storyLives = STORY_LIVES;
 let storyTimeRemaining = STORY_TIME_LIMIT;
 let coinCount = 0;
+let totalCoinsCollected = 0;
 let storyLevel = null;
 let qBlocks = [];
 let coins = [];
@@ -86,6 +93,7 @@ let pipeTiles = [];
 let hazardTiles = [];
 let movingPlatforms = [];
 let crumbleTilesList = [];
+let bricks = [];
 let levelFlag = null;
 let levelCastle = null;
 let currentLevelIndex = 0;
@@ -119,6 +127,7 @@ function startStory(levelIndex = 0) {
     storyLives = STORY_LIVES;
     storyTimeRemaining = STORY_TIME_LIMIT;
     coinCount = 0;
+    totalCoinsCollected = 0;
     score = 0;
     currentLevelIndex = Math.max(0, Math.min(LEVELS.length - 1, levelIndex));
     startPlaying();
@@ -141,8 +150,7 @@ function startPlaying() {
     enemies = [];
     bullets = [];
     killCount = 0;
-    comboCount = 0;
-    comboTimer = 0;
+    airStompChain = 0;
     survivalTime = 0;
     gameTime = 0;
     deathTimer = 0;
@@ -164,6 +172,9 @@ function startPlaying() {
     hazardTiles = storyLevel.hazards || [];
     movingPlatforms = (storyLevel.movingPlatforms || []).map(m => ({ ...m }));
     crumbleTilesList = (storyLevel.crumbleTiles || []).map(c => ({ ...c }));
+    bricks = storyLevel.bricks || [];
+    // Reset broken state on bricks
+    for (const b of bricks) { b.broken = false; b.bumpT = 0; }
     levelFlag = storyLevel.flag;
     levelCastle = storyLevel.castle;
     for (const e of storyLevel.enemies) {
@@ -226,12 +237,12 @@ function loop(timestamp) {
             if (storyLives > 1) {
                 storyLives--;
                 storyTimeRemaining = STORY_TIME_LIMIT;
-                showAnnouncement(`MARIO × ${storyLives}`);
+                showAnnouncement(`DAVIO × ${storyLives}`);
                 startPlaying();
             } else {
                 state = STATE.GAME_OVER;
                 const timeStr = formatTime(survivalTime);
-                const displayScore = score + coinCount * COIN_VALUE;
+                const displayScore = score;
                 showGameOver(displayScore, killCount, timeStr);
             }
         }
@@ -265,12 +276,12 @@ function updateVictory(dt) {
         if (victoryTimer > 4) {
             victoryPhase = 'done';
             const timeBonus = Math.floor(storyTimeRemaining) * 50;
-            const finalScore = score + coinCount * COIN_VALUE + timeBonus;
+            score += timeBonus;
             const stars = computeStars(storyTimeRemaining, coinCount);
             const isLastLevel = currentLevelIndex >= LEVELS.length - 1;
             markCleared(currentLevelIndex);
             victoryStateData = {
-                score: finalScore,
+                score: score,
                 time: storyTimeRemaining,
                 coins: coinCount,
                 kills: killCount,
@@ -355,6 +366,12 @@ function updateCrumbleTiles(dt) {
     }
 }
 
+function updateBricks(dt) {
+    for (const b of bricks) {
+        if (b.bumpT > 0) b.bumpT -= dt;
+    }
+}
+
 function checkCrumbleStand(player) {
     if (!player.grounded) return;
     for (const c of crumbleTilesList) {
@@ -368,11 +385,12 @@ function checkCrumbleStand(player) {
 }
 
 function checkHazardTouch(player) {
+    if (player.starTimer > 0) return;
     for (const h of hazardTiles) {
         if (h.type === 'spike') {
             if (player.x + player.width > h.x + 4 && player.x < h.x + h.width - 4 &&
                 player.y + player.height > h.y + 4 && player.y < h.y + h.height) {
-                damagePlayerHazard(player, 30);
+                damagePlayerHazard(player);
                 return;
             }
         } else if (h.type === 'lava') {
@@ -388,7 +406,7 @@ function checkHazardTouch(player) {
                 const fy = h.y + Math.sin(angle) * i * 16;
                 if (player.x + player.width > fx - 6 && player.x < fx + 6 &&
                     player.y + player.height > fy - 6 && player.y < fy + 6) {
-                    damagePlayerHazard(player, 30);
+                    damagePlayerHazard(player);
                     return;
                 }
             }
@@ -396,26 +414,19 @@ function checkHazardTouch(player) {
     }
 }
 
-function damagePlayerHazard(player, amount) {
-    if (player.invincible > 0) return;
-    if (player.shieldHits > 0) {
-        player.shieldHits--;
-        player.invincible = 0.5;
-        triggerShake(3, 0.15);
-        playShieldHit();
-        return;
-    }
-    player.health -= amount;
-    player.invincible = 1.0;
+function damagePlayerHazard(player) {
+    if (player.invincible > 0 || player.starTimer > 0) return;
+    const willDie = demoteOnHit(player);
     triggerShake(6, 0.2);
     playPlayerHit();
     flashAlpha = 0.4;
-    player.vy = -300;
+    if (!willDie) player.vy = -300;
 }
 
 function checkQBlockBump(player, dt) {
     if (player.headBonk) {
         const playerCx = player.x + player.width / 2;
+        // Q-blocks
         for (const b of qBlocks) {
             if (b.used) continue;
             if (b.y === player.headBonk.y &&
@@ -425,26 +436,52 @@ function checkQBlockBump(player, dt) {
                 playBumpBlock();
                 const cx = b.x + b.width / 2;
                 if (b.contents === 'coin') {
-                    coinCount++;
-                    score += COIN_VALUE;
-                    spawnScorePopup(cx, b.y - 10, '200');
-                    spawnCoinSparkle(cx, b.y - 6);
-                    playCoin();
+                    addCoin(cx, b.y - 6);
                 } else if (b.contents === 'mushroom') {
-                    spawnPickup(cx, b.y - 16, 'health');
+                    // Context-aware: small Davio gets red mushroom; super+ gets 1up
+                    if (player.powerLevel === POWER_SMALL) {
+                        spawnPickup(cx, b.y - 16, 'mushroom');
+                    } else {
+                        spawnPickup(cx, b.y - 16, 'oneup');
+                    }
                     playPowerUp();
                 } else if (b.contents === 'fireflower') {
-                    spawnPickup(cx, b.y - 16, 'rapid');
+                    spawnPickup(cx, b.y - 16, 'fireflower');
                     playPowerUp();
                 } else if (b.contents === 'star') {
-                    spawnPickup(cx, b.y - 16, 'shield');
+                    spawnPickup(cx, b.y - 16, 'star');
+                    playPowerUp();
+                } else if (b.contents === 'oneup') {
+                    spawnPickup(cx, b.y - 16, 'oneup');
                     playPowerUp();
                 }
-                break;
+                return;
+            }
+        }
+        // Bricks
+        for (const b of bricks) {
+            if (b.broken) continue;
+            if (b.y === player.headBonk.y &&
+                playerCx >= b.x && playerCx <= b.x + b.width) {
+                if (player.powerLevel !== POWER_SMALL || player.starTimer > 0) {
+                    breakBrick(b);
+                } else {
+                    b.bumpT = 0.25;
+                    playBumpBlock();
+                }
+                return;
             }
         }
     }
-    for (const b of qBlocks) if (b.bumpT > 0) b.bumpT -= dt;
+}
+
+function breakBrick(b) {
+    b.broken = true;
+    score += 50;
+    spawnKillParticles(b.x + 16, b.y + 8, '#C84C0C');
+    spawnKillParticles(b.x + 16, b.y + 24, '#7C2810');
+    playBrickBreak();
+    triggerShake(2, 0.1);
 }
 
 function checkCoinCollect(player) {
@@ -454,13 +491,24 @@ function checkCoinCollect(player) {
         const dy = (player.y + player.height / 2) - c.y;
         if (Math.abs(dx) < 18 && Math.abs(dy) < 22) {
             c.picked = true;
-            coinCount++;
-            score += COIN_VALUE;
-            spawnScorePopup(c.x, c.y - 10, '50');
-            spawnCoinSparkle(c.x, c.y);
-            playCoin();
+            addCoin(c.x, c.y);
         }
         c.t += 0.1;
+    }
+}
+
+function addCoin(cx, cy) {
+    coinCount++;
+    totalCoinsCollected++;
+    score += COIN_VALUE;
+    spawnScorePopup(cx, cy - 10, String(COIN_VALUE));
+    spawnCoinSparkle(cx, cy);
+    playCoin();
+    if (totalCoinsCollected >= COINS_PER_LIFE) {
+        totalCoinsCollected -= COINS_PER_LIFE;
+        storyLives++;
+        playOneUp();
+        showAnnouncement('1-UP!');
     }
 }
 
@@ -491,9 +539,15 @@ function update(dt) {
     const platforms = refreshPlatforms();
     updateMovingPlatforms();
     updateCrumbleTiles(dt);
+    updateBricks(dt);
 
     const wasAirborne = !player.grounded;
     updatePlayer(player, dt, bullets, currentMode, camera, platforms);
+
+    // Reset air stomp chain on landing
+    if (wasAirborne && player.grounded) {
+        airStompChain = 0;
+    }
 
     // Carry on horizontal movers
     for (const m of movingPlatforms) {
@@ -511,6 +565,31 @@ function update(dt) {
         spawnLandingDust(player.x + player.width / 2, player.y + player.height);
     }
 
+    // Ground pound shockwave
+    if (player.groundPoundLanded > 0.99) {
+        triggerShake(8, 0.25);
+        zoomPunch = 0.12;
+        for (let i = 0; i < enemies.length; i++) {
+            const e = enemies[i];
+            const dx = (player.x + player.width / 2) - (e.x + e.width / 2);
+            const dy = (player.y + player.height) - (e.y + e.height / 2);
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < GROUND_POUND_RADIUS) {
+                e.health -= 2;
+                e.hitFlash = 0.1;
+                if (e.health <= 0) killEnemy(enemies, i, true);
+            }
+        }
+        // Break adjacent bricks below
+        for (const b of bricks) {
+            if (b.broken) continue;
+            const above = (b.y + 32 === Math.round(player.y + player.height) || b.y + 32 - (player.y + player.height) < 8);
+            if (above && Math.abs((b.x + 16) - (player.x + player.width / 2)) < 24) {
+                breakBrick(b);
+            }
+        }
+    }
+
     checkCrumbleStand(player);
     checkQBlockBump(player, dt);
     checkCoinCollect(player);
@@ -520,43 +599,109 @@ function update(dt) {
         return;
     }
 
-    moveBullets(bullets, dt, currentMode, camera);
+    moveBullets(bullets, dt, currentMode, camera, platforms);
     updateEnemies(enemies, player, dt, currentMode, camera, platforms);
-
-    if (comboTimer > 0) {
-        comboTimer -= dt;
-        if (comboTimer <= 0) comboCount = 0;
-    }
 
     if (flashAlpha > 0) flashAlpha -= dt * 3;
 
-    // Bullet-enemy
+    // Bullet (fireball) → enemy
     for (let i = bullets.length - 1; i >= 0; i--) {
-        const b = bullets[i];
-        const bBox = { x: b.x - b.radius, y: b.y - b.radius, width: b.radius * 2, height: b.radius * 2 };
+        const bu = bullets[i];
+        const bBox = { x: bu.x - bu.radius, y: bu.y - bu.radius, width: bu.radius * 2, height: bu.radius * 2 };
         for (let j = enemies.length - 1; j >= 0; j--) {
-            if (collides(bBox, enemies[j])) {
-                enemies[j].health -= b.damage;
-                enemies[j].hitFlash = 0.08;
-                bullets.splice(i, 1);
-                if (enemies[j].health <= 0) {
-                    killEnemy(enemies, j);
+            const e = enemies[j];
+            if (e.type === 'piranha' && e.phase !== 'visible') continue;
+            if (collides(bBox, e)) {
+                if (e.type === 'tank') {
+                    e.health -= bu.damage;
+                    e.hitFlash = 0.1;
+                    score += 200;
+                    spawnScorePopup(e.x + e.width / 2, e.y - 10, '200');
+                } else {
+                    e.health = 0;
                 }
+                bullets.splice(i, 1);
+                if (e.health <= 0) killEnemy(enemies, j);
                 break;
             }
         }
     }
 
-    // Stomp + collision
+    // Player ↔ enemy
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
+        if (enemy.type === 'piranha' && enemy.phase !== 'visible') continue;
         if (!collides(player, enemy)) continue;
+
+        // Star power: kill on contact, no damage taken
+        if (player.starTimer > 0 && enemy.type !== 'tank') {
+            spawnSquishParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height, '#FFE890');
+            score += 1000;
+            spawnScorePopup(enemy.x + enemy.width / 2, enemy.y - 10, '1000');
+            killEnemy(enemies, i, true);
+            continue;
+        }
 
         const playerFeet = player.y + player.height;
         const enemyTop = enemy.y;
         const fallingOnto = player.vy > 50 && playerFeet < enemyTop + 16;
 
-        if (fallingOnto && enemy.type !== 'tank') {
+        // Koopa shell interactions
+        if (enemy.type === 'koopa') {
+            if (enemy.shellState === 'shell') {
+                // Touching idle shell — kick it
+                if (fallingOnto) {
+                    // Stomping idle shell stops it / re-bumps
+                    player.vy = -STOMP_BOUNCE;
+                    enemy.shellTimer = KOOPA_SHELL_REVIVE;
+                    triggerHitPause(0.04);
+                    playStomp();
+                    continue;
+                } else {
+                    // Side touch — kick
+                    const kickDir = (player.x + player.width / 2) < (enemy.x + enemy.width / 2) ? 1 : -1;
+                    enemy.shellState = 'sliding';
+                    enemy.vx = kickDir * KOOPA_SHELL_SPEED;
+                    enemy.shellTimer = 999;
+                    playKick();
+                    score += 400;
+                    spawnScorePopup(enemy.x + enemy.width / 2, enemy.y - 10, '400');
+                    // Brief invincibility so we don't immediately get hit by it
+                    player.invincible = 0.3;
+                    continue;
+                }
+            } else if (enemy.shellState === 'sliding') {
+                // Stomp slides → stop
+                if (fallingOnto) {
+                    player.vy = -STOMP_BOUNCE;
+                    enemy.shellState = 'shell';
+                    enemy.vx = 0;
+                    enemy.shellTimer = KOOPA_SHELL_REVIVE;
+                    triggerHitPause(0.04);
+                    playStomp();
+                    continue;
+                }
+                // Otherwise sliding shell kills player (handled below as damage)
+            } else if (enemy.shellState === 'walk') {
+                if (fallingOnto) {
+                    // First stomp → shell
+                    player.vy = -STOMP_BOUNCE;
+                    enemy.shellState = 'shell';
+                    enemy.height = 24;
+                    enemy.y += 12;
+                    enemy.vx = 0;
+                    enemy.shellTimer = KOOPA_SHELL_REVIVE;
+                    triggerHitPause(0.05);
+                    triggerShake(3, 0.15);
+                    spawnSquishParticles(enemy.x + enemy.width / 2, enemy.y, '#00A800');
+                    awardStompCombo(enemy);
+                    playStomp();
+                    continue;
+                }
+            }
+        }
+
+        if (fallingOnto && enemy.type !== 'tank' && enemy.type !== 'piranha') {
             player.vy = -STOMP_BOUNCE;
             player.grounded = false;
             triggerHitPause(0.05);
@@ -574,6 +719,7 @@ function update(dt) {
             } else {
                 spawnSquishParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height, '#9C4810');
                 playStomp();
+                awardStompCombo(enemy);
                 killEnemy(enemies, i, true);
             }
             continue;
@@ -581,30 +727,44 @@ function update(dt) {
 
         if (fallingOnto && enemy.type === 'tank') {
             player.vy = -STOMP_BOUNCE * 0.7;
-            enemy.health -= 1;
-            enemy.hitFlash = 0.1;
+            // Tank head only takes damage from fireballs/shells, not stomps
+            // SMB1 style — bounce off harmlessly
             triggerHitPause(0.05);
-            triggerShake(4, 0.2);
             playStomp();
-            if (enemy.health <= 0) {
-                killEnemy(enemies, i, true);
-            }
             continue;
         }
 
-        if (player.invincible <= 0) {
-            const hasShield = player.shieldHits > 0;
-            triggerShake(hasShield ? 3 : 6, 0.2);
-            if (hasShield) {
-                playShieldHit();
-            } else {
-                playPlayerHit();
-                flashAlpha = 0.4;
-            }
-            comboCount = 0;
-            comboTimer = 0;
+        // Damage to player
+        if (player.invincible <= 0 && player.starTimer <= 0) {
+            triggerShake(6, 0.2);
+            playPlayerHit();
+            flashAlpha = 0.4;
+            airStompChain = 0;
+            const willDie = demoteOnHit(player);
+            if (!willDie) player.vy = -200;
         }
-        damagePlayer(player, enemy.damage);
+    }
+
+    // Enemy ↔ enemy via shell
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const a = enemies[i];
+        if (a.type !== 'koopa' || a.shellState !== 'sliding') continue;
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            if (i === j) continue;
+            const b = enemies[j];
+            if (b.type === 'piranha' && b.phase !== 'visible') continue;
+            if (collides(a, b)) {
+                if (b.type === 'tank') {
+                    b.health -= 1;
+                    b.hitFlash = 0.1;
+                }
+                spawnSquishParticles(b.x + b.width / 2, b.y + b.height / 2, '#FFE890');
+                score += 800;
+                spawnScorePopup(b.x + b.width / 2, b.y - 10, '800');
+                if (b.health <= 0 || b.type !== 'tank') killEnemy(enemies, j);
+                break;
+            }
+        }
     }
 
     // Pickups
@@ -612,29 +772,26 @@ function update(dt) {
     for (let i = pickups.length - 1; i >= 0; i--) {
         if (collides(player, pickups[i])) {
             const pu = pickups[i];
-            if (pu.type === 'health') {
-                playPickup();
-                player.health = Math.min(player.health + (pu.healAmount || 20), PLAYER_MAX_HEALTH);
-                spawnScorePopup(pu.x + 8, pu.y - 10, 'HP');
+            if (pu.type === 'mushroom' || pu.type === 'health') {
+                playPowerUp();
+                promotePower(player, 'mushroom');
+                score += 1000;
+                spawnScorePopup(pu.x + 8, pu.y - 10, '1000');
             } else if (pu.type === 'oneup') {
                 playOneUp();
                 storyLives++;
                 showAnnouncement('1-UP!');
-            } else if (pu.type === 'rapid') {
-                playPickup();
-                giveWeapon(player, 'rapid', 10);
-                showAnnouncement('FIRE FLOWER!');
-            } else {
+            } else if (pu.type === 'fireflower' || pu.type === 'rapid') {
                 playPowerUp();
-                applyPowerUp(player, pu.type);
-                const labels = {
-                    speed: 'SPEED BOOST!',
-                    superJump: 'SUPER JUMP!',
-                    doubleShot: 'DOUBLE SHOT!',
-                    shield: 'STAR POWER!',
-                    giant: 'SUPER MARIO!',
-                };
-                showAnnouncement(labels[pu.type] || pu.type.toUpperCase() + '!');
+                promotePower(player, 'fireflower');
+                score += 1000;
+                spawnScorePopup(pu.x + 8, pu.y - 10, '1000');
+            } else if (pu.type === 'star' || pu.type === 'shield') {
+                playPowerUp();
+                promotePower(player, 'star');
+                showAnnouncement('STAR POWER!');
+            } else {
+                playPickup();
             }
             removePickup(i);
         }
@@ -666,24 +823,38 @@ function update(dt) {
     }
 }
 
+function awardStompCombo(enemy) {
+    const base = enemy.scoreValue || 100;
+    let points;
+    if (airStompChain < STOMP_COMBO_SCORES.length) {
+        points = STOMP_COMBO_SCORES[airStompChain];
+    } else {
+        points = STOMP_COMBO_SCORES[STOMP_COMBO_SCORES.length - 1];
+        // 9+ chain → 1-up cascade
+        storyLives++;
+        playOneUp();
+        showAnnouncement('1-UP!');
+    }
+    // Use the larger of base score or combo tier
+    const final = Math.max(base, points);
+    score += final;
+    spawnScorePopup(enemy.x + enemy.width / 2, enemy.y - 10, String(final));
+    airStompChain++;
+}
+
 function killEnemy(enemiesArr, j, fromStomp = false) {
     const e = enemiesArr[j];
     const ex = e.x + e.width / 2;
     const ey = e.y + e.height / 2;
     const color = ENEMY_COLORS[e.type] || COLOR_ENEMY;
-    if (!fromStomp) spawnKillParticles(ex, ey, color);
+    if (!fromStomp) {
+        spawnKillParticles(ex, ey, color);
+        // Non-stomp kill awards base score
+        score += e.scoreValue || 100;
+        spawnScorePopup(ex, ey - 10, String(e.scoreValue || 100));
+    }
     playEnemyDeath();
-
-    comboCount++;
-    comboTimer = COMBO_WINDOW;
-    const multiplier = Math.min(comboCount, 5);
-    const points = e.scoreValue * multiplier;
-    score += points;
-    const comboText = multiplier > 1 ? `${points} (${multiplier}x)` : `${points}`;
-    spawnScorePopup(ex, ey - 20, comboText);
     killCount++;
-
-    if (Math.random() < 0.04) spawnPickup(ex, ey, 'oneup');
     enemiesArr.splice(j, 1);
 }
 
@@ -708,7 +879,7 @@ function render(dt) {
 
     const storyData = {
         decoTiles, pipeTiles, qBlocks, coins, flag: levelFlag, castle: levelCastle,
-        hazards: hazardTiles, movingPlatforms, crumbleTilesList,
+        hazards: hazardTiles, movingPlatforms, crumbleTilesList, bricks,
         lives: storyLives, coinCount, timeRemaining: storyTimeRemaining,
         levelName: storyLevel ? storyLevel.name : '',
         theme: storyLevel ? storyLevel.theme : 'overworld',
@@ -722,12 +893,12 @@ function render(dt) {
 
     renderScreenEffects(ctx);
 
-    if (comboCount > 1) {
+    if (airStompChain > 1) {
         ctx.fillStyle = '#FFAA00';
         ctx.font = 'bold 18px monospace';
         ctx.textAlign = 'center';
-        ctx.globalAlpha = Math.min(comboTimer / 0.5, 1.0);
-        ctx.fillText(`${comboCount}x COMBO`, CANVAS_WIDTH / 2, 50);
+        ctx.globalAlpha = 0.9;
+        ctx.fillText(`${airStompChain}x STOMP CHAIN`, CANVAS_WIDTH / 2, 50);
         ctx.globalAlpha = 1.0;
         ctx.textAlign = 'left';
     }

@@ -20,8 +20,9 @@ export function resolvePlatformCollisions(entity, platforms) {
     entity.headBonk = null;
 
     for (const plat of plats) {
-        // Skip broken crumbling platforms
+        // Skip broken crumbling / broken bricks
         if (plat.crumbleState === 'broken') continue;
+        if (plat.broken) continue;
 
         if (!collides(entity, plat)) continue;
 
